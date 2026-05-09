@@ -24,6 +24,11 @@ lint:
     # response langsung lebih natural untuk grpc-gateway REST translation
     # (response = resource shape, bukan envelope wrapper).
     - RPC_RESPONSE_STANDARD_NAME
+    # RPC_REQUEST_STANDARD_NAME di-except: untuk RPC seperti HandleWebhook
+    # (request = WebhookPayload, raw payload dari Midtrans) dan presence stream
+    # (request = LocationUpdate event), domain naming lebih ekspresif daripada
+    # generic <RPC>Request. Trade-off konsisten dengan RESPONSE rule di atas.
+    - RPC_REQUEST_STANDARD_NAME
 breaking:
   use:
     - FILE
