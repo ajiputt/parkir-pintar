@@ -100,23 +100,35 @@ func (c *apiClient) get(t *testing.T, path string) (int, []byte) {
 func TestE2E_HappyPath(t *testing.T) {
 	c := newClient()
 	now := time.Now().UTC()
+	// Body sesuai CreateReservationRequest (proto/reservation/v1/reservation.proto):
+	//   - end_at sudah dropped (Path A migration 002, ADR-0011)
+	//   - payment_mode WAJIB di-set (AUTO/MANUAL, ADR-0014)
 	body := map[string]any{
 		"driver_id":    "driver-happy-" + uuid.NewString(),
 		"plate_no":     "B 1111 AAA",
 		"vehicle_type": "CAR",
 		"mode":         "SYSTEM",
 		"start_at":     now.Add(time.Minute).Format(time.RFC3339),
-		"end_at":       now.Add(2 * time.Hour).Format(time.RFC3339),
+		"payment_mode": "AUTO",
 	}
 	idem := uuid.NewString()
 	code, resp := c.post(t, "/v1/reservations", body, map[string]string{"Idempotency-Key": idem})
 	assert.Contains(t, []int{200, 201}, code, "expected 2xx, got %d: %s", code, resp)
 
+	// Response shape = CreateReservationResponse:
+	//   { "reservation": { "id": ..., "state": "CONFIRMED", ... },
+	//     "booking_fee": { "amount": "5000", "currency": "IDR" } }
 	var out map[string]any
 	require.NoError(t, json.Unmarshal(resp, &out))
-	assert.NotEmpty(t, out["id"])
-	assert.Equal(t, "CONFIRMED", out["state"])
-	assert.Equal(t, float64(5000), out["booking_fee_idr"])
+	res, ok := out["reservation"].(map[string]any)
+	require.True(t, ok, "response harus punya field 'reservation', got: %s", string(resp))
+	assert.NotEmpty(t, res["id"])
+	assert.Equal(t, "CONFIRMED", res["state"])
+
+	fee, ok := out["booking_fee"].(map[string]any)
+	require.True(t, ok, "response harus punya field 'booking_fee'")
+	// Money.amount di-marshal as string di JSON (int64 → string supaya gak overflow JS).
+	assert.Equal(t, "5000", fee["amount"])
 }
 
 // ----- Skenario 2: Idempotency / no double-charge -----
@@ -129,7 +141,7 @@ func TestE2E_IdempotencyKey_RepeatedCall(t *testing.T) {
 		"vehicle_type": "CAR",
 		"mode":         "SYSTEM",
 		"start_at":     now.Add(time.Minute).Format(time.RFC3339),
-		"end_at":       now.Add(time.Hour).Format(time.RFC3339),
+		"payment_mode": "AUTO",
 	}
 	idem := uuid.NewString()
 	headers := map[string]string{"Idempotency-Key": idem}
@@ -138,13 +150,19 @@ func TestE2E_IdempotencyKey_RepeatedCall(t *testing.T) {
 	_, resp2 := c.post(t, "/v1/reservations", body, headers)
 	_, resp3 := c.post(t, "/v1/reservations", body, headers)
 
-	// All 3 must reference the same reservation id
-	var r1, r2, r3 map[string]any
-	_ = json.Unmarshal(resp1, &r1)
-	_ = json.Unmarshal(resp2, &r2)
-	_ = json.Unmarshal(resp3, &r3)
-	assert.Equal(t, r1["id"], r2["id"])
-	assert.Equal(t, r2["id"], r3["id"])
+	// All 3 must reference the same reservation id (response.reservation.id).
+	getID := func(b []byte) any {
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		if r, ok := m["reservation"].(map[string]any); ok {
+			return r["id"]
+		}
+		return nil
+	}
+	id1, id2, id3 := getID(resp1), getID(resp2), getID(resp3)
+	assert.NotNil(t, id1, "first call must return reservation: %s", string(resp1))
+	assert.Equal(t, id1, id2, "2nd call same idem-key must return same id")
+	assert.Equal(t, id2, id3, "3rd call same idem-key must return same id")
 }
 
 // ----- Skenario 3: Concurrent double-book prevention -----
@@ -176,7 +194,7 @@ func TestE2E_DoubleBook_50Concurrent(t *testing.T) {
 				"vehicle_type": "CAR",
 				"mode":         "SYSTEM",
 				"start_at":     now.Add(time.Minute).Format(time.RFC3339),
-				"end_at":       now.Add(time.Hour).Format(time.RFC3339),
+				"payment_mode": "AUTO",
 			}
 			code, _ := c.post(t, "/v1/reservations", body, map[string]string{
 				"Idempotency-Key": uuid.NewString(),
@@ -210,12 +228,26 @@ func TestE2E_PaymentMockSuccess(t *testing.T) {
 		t.Skip("payment in real mode — skip mock")
 	}
 	c := newClient()
-	// Demo invoice id (stub)
+	// Smoke test: verify payment endpoint responsive + return well-formed
+	// response. Test pakai invoice_id random — invoice TIDAK akan ada,
+	// jadi response error (4xx atau 5xx) expected.
+	//
+	// Full payment lifecycle (create reservation → checkout → get invoice →
+	// create payment → webhook simulation) di-cover via Postman collection
+	// (postman/parkir-pintar-demo.postman_collection.json folder 02), bukan
+	// di automated e2e test ini.
+	//
+	// Known issue: payment service current return 500 untuk "invoice not found"
+	// (gRPC INTERNAL = 13) instead of NOT_FOUND (5 = HTTP 404). Roadmap M1:
+	// fix error mapping di payment/internal/usecase/service.go untuk return
+	// proper NOT_FOUND status. Lihat ROADMAP.md.
 	code, body := c.post(t, "/v1/payments", map[string]any{
 		"invoice_id": uuid.NewString(),
+		"method":     "QRIS",
 	}, nil)
 	t.Logf("payment response: %d %s", code, body)
-	// Mock mode return 200 + qr_string
+	require.NotZero(t, code, "request harus complete, bukan timeout")
+	require.NotEmpty(t, body, "response body harus ada")
 	if code == 200 {
 		assert.Contains(t, string(body), "qr_string")
 	}
