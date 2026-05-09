@@ -64,7 +64,7 @@ services:
     command:
       - |
         set -e
-        for s in reservation billing payment; do
+        for s in reservation billing payment notification; do
           echo "==> migrate $$s"
           migrate -path /migrations/$$s \
             -database "postgres://parkir:parkir_dev_only@postgres:5432/parkirpintar?sslmode=disable&search_path=$$s" up
