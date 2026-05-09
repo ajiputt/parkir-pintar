@@ -210,11 +210,17 @@ jobs:
 
       # ----- Notification -----
       - name: Slack notification
-        if: always() && env.SLACK_WEBHOOK_URL != ''
+        if: always()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          STATUS="${{ job.status }}"
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "Slack webhook not configured, skipping notification"
+            exit 0
+          fi
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"EKS deploy ${{ github.event.inputs.environment }} → $STATUS (image=${{ steps.tag.outputs.tag }})\"}" \
+            --data "{\"text\":\"EKS deploy $ENVIRONMENT → $STATUS (image=$IMAGE_TAG)\"}" \
             "$SLACK_WEBHOOK_URL" || true
