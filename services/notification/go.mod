@@ -1,6 +1,6 @@
 module github.com/ajiperdana/parkir-pintar/services/notification
 
-go 1.24
+go 1.22
 
 require (
 	github.com/ajiperdana/parkir-pintar/pkg v0.0.0

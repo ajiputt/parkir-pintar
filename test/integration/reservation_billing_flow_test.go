@@ -67,25 +67,28 @@ func TestReservationToBillingFlow(t *testing.T) {
 			filepath.Join(migrationsRoot, schema, "001_init.up.sql"))
 	}
 
-	// Sanity: 1 area seed
+	// Sanity: 1 area seed.
+	// Note: pakai schema-qualified table names (reservation.X) instead of
+	// `SET search_path TO X; INSERT INTO Y` karena pgx stdlib via database/sql
+	// pakai prepared statement protocol yang reject multi-statement query
+	// (SQLSTATE 42601). Schema-qualified = single statement = OK.
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO parking_area (id, name, address, timezone)
-		VALUES ('11111111-1111-1111-1111-111111111111','Test Area','-','Asia/Jakarta');
+		INSERT INTO reservation.parking_area (id, name, address, timezone)
+		VALUES ('11111111-1111-1111-1111-111111111111','Test Area','-','Asia/Jakarta')
 	`)
 	require.NoError(t, err)
 
 	floorID := uuid.New()
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO floor (id, area_id, level) VALUES ($1, '11111111-1111-1111-1111-111111111111', 1);
+		INSERT INTO reservation.floor (id, area_id, level)
+		VALUES ($1, '11111111-1111-1111-1111-111111111111', 1)
 	`, floorID)
 	require.NoError(t, err)
 
 	spotID := uuid.New()
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO spot (id, floor_id, code, vehicle_type) VALUES ($1, $2, 'F1-C-001', 'CAR');
+		INSERT INTO reservation.spot (id, floor_id, code, vehicle_type)
+		VALUES ($1, $2, 'F1-C-001', 'CAR')
 	`, spotID, floorID)
 	require.NoError(t, err)
 
@@ -97,55 +100,49 @@ func TestReservationToBillingFlow(t *testing.T) {
 	expiresAt := time.Now().Add(time.Hour)
 
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO reservation (id, driver_id, spot_id, plate_no, vehicle_type,
+		INSERT INTO reservation.reservation (id, driver_id, spot_id, plate_no, vehicle_type,
 		    state, start_at, end_at, expires_at, assignment_mode, idempotency_key)
-		VALUES ($1,$2,$3,'B 1234 ABC','CAR','CONFIRMED',$4,$5,$6,'SYSTEM','idem-1');
+		VALUES ($1,$2,$3,'B 1234 ABC','CAR','CONFIRMED',$4,$5,$6,'SYSTEM','idem-1')
 	`, resID, driverID, spotID, startAt, endAt, expiresAt)
 	require.NoError(t, err, "create reservation")
 
 	// ----- Test 2: Try double booking — must violate EXCLUDE constraint
 	dupID := uuid.New()
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO reservation (id, driver_id, spot_id, plate_no, vehicle_type,
+		INSERT INTO reservation.reservation (id, driver_id, spot_id, plate_no, vehicle_type,
 		    state, start_at, end_at, expires_at, assignment_mode, idempotency_key)
-		VALUES ($1,'other-driver',$2,'B 9999 XYZ','CAR','CONFIRMED',$3,$4,$5,'SYSTEM','idem-2');
+		VALUES ($1,'other-driver',$2,'B 9999 XYZ','CAR','CONFIRMED',$3,$4,$5,'SYSTEM','idem-2')
 	`, dupID, spotID, startAt.Add(30*time.Minute), endAt.Add(time.Hour), expiresAt)
 	require.Error(t, err, "EXCLUDE constraint must reject overlap")
 	require.Contains(t, err.Error(), "no_overlap", "error harus dari EXCLUDE constraint")
 
 	// ----- Test 3: Cancel reservation → spot tersedia kembali
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		UPDATE reservation SET state='CANCELLED' WHERE id=$1
+		UPDATE reservation.reservation SET state='CANCELLED' WHERE id=$1
 	`, resID)
 	require.NoError(t, err)
 
 	// Sekarang reservation baru di slot yang sama harus berhasil (state berbeda → tidak overlap)
 	newID := uuid.New()
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO reservation (id, driver_id, spot_id, plate_no, vehicle_type,
+		INSERT INTO reservation.reservation (id, driver_id, spot_id, plate_no, vehicle_type,
 		    state, start_at, end_at, expires_at, assignment_mode, idempotency_key)
-		VALUES ($1,'driver-2',$2,'B 8888 ZZZ','CAR','CONFIRMED',$3,$4,$5,'SYSTEM','idem-3');
+		VALUES ($1,'driver-2',$2,'B 8888 ZZZ','CAR','CONFIRMED',$3,$4,$5,'SYSTEM','idem-3')
 	`, newID, spotID, startAt, endAt, expiresAt)
 	require.NoError(t, err, "after cancel, new reservation must succeed")
 
 	// ----- Test 4: Idempotency table
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO idempotency_keys (key, request_hash, status, expires_at)
-		VALUES ('test-key', 'hash-1', 'COMPLETED', NOW() + INTERVAL '24 hours');
+		INSERT INTO reservation.idempotency_keys (key, request_hash, status, expires_at)
+		VALUES ('test-key', 'hash-1', 'COMPLETED', NOW() + INTERVAL '24 hours')
 	`)
 	require.NoError(t, err)
 
 	// Re-insert same key → ON CONFLICT DO NOTHING (in real code we use this).
 	tag, err := db.ExecContext(ctx, `
-		SET search_path TO reservation, public;
-		INSERT INTO idempotency_keys (key, request_hash, status, expires_at)
+		INSERT INTO reservation.idempotency_keys (key, request_hash, status, expires_at)
 		VALUES ('test-key', 'hash-1', 'COMPLETED', NOW() + INTERVAL '24 hours')
-		ON CONFLICT (key) DO NOTHING;
+		ON CONFLICT (key) DO NOTHING
 	`)
 	require.NoError(t, err)
 	rows, _ := tag.RowsAffected()
@@ -153,17 +150,15 @@ func TestReservationToBillingFlow(t *testing.T) {
 
 	// ----- Test 5: Billing event log (event sourcing dedup)
 	_, err = db.ExecContext(ctx, `
-		SET search_path TO billing, public;
-		INSERT INTO events_log (source_event_id, aggregate_type, aggregate_id, event_type, payload, occurred_at)
-		VALUES ('evt-1', 'reservation', $1, 'reservation.confirmed.v1', '{}', NOW());
+		INSERT INTO billing.events_log (source_event_id, aggregate_type, aggregate_id, event_type, payload, occurred_at)
+		VALUES ('evt-1', 'reservation', $1, 'reservation.confirmed.v1', '{}', NOW())
 	`, resID.String())
 	require.NoError(t, err)
 
 	tag2, err := db.ExecContext(ctx, `
-		SET search_path TO billing, public;
-		INSERT INTO events_log (source_event_id, aggregate_type, aggregate_id, event_type, payload, occurred_at)
+		INSERT INTO billing.events_log (source_event_id, aggregate_type, aggregate_id, event_type, payload, occurred_at)
 		VALUES ('evt-1', 'reservation', $1, 'reservation.confirmed.v1', '{}', NOW())
-		ON CONFLICT (source_event_id) DO NOTHING;
+		ON CONFLICT (source_event_id) DO NOTHING
 	`, resID.String())
 	require.NoError(t, err)
 	rows2, _ := tag2.RowsAffected()
