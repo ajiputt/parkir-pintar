@@ -1,0 +1,17 @@
+Subject: [ParkirPintar] Pembayaran Gagal - Action Needed
+
+Halo {{.DriverName}},
+
+Pembayaran kamu tidak berhasil diproses.
+
+  Payment ID  : {{.PaymentID}}
+  Invoice ID  : {{.InvoiceID}}
+  Jumlah      : Rp {{.AmountIDR}}
+
+Mohon coba bayar ulang via app. Kalau saldo wallet kurang, top-up dulu.
+
+Kalau ada masalah lain, hubungi customer service kami.
+
+—
+ParkirPintar Team
+support@parkirpintar.id

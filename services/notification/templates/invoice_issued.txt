@@ -1,0 +1,18 @@
+Subject: [ParkirPintar] Tagihan Parkir - Invoice {{.InvoiceID}}
+
+Halo {{.DriverName}},
+
+Sesi parkir kamu sudah selesai. Berikut tagihannya:
+
+  Invoice ID       : {{.InvoiceID}}
+  Reservation ID   : {{.ReservationID}}
+  Total            : Rp {{.TotalIDR}}
+
+Tagihan akan di-debit otomatis dari saldo wallet kamu. Kalau ada pertanyaan
+atau dispute, balas email ini dalam 7 hari.
+
+Terima kasih atas kepercayaannya!
+
+—
+ParkirPintar Team
+support@parkirpintar.id

@@ -1,0 +1,24 @@
+Subject: [ParkirPintar] PERINGATAN: Tagihan Belum Dibayar - {{.InvoiceID}}
+
+Halo {{.DriverName}},
+
+Tagihan kamu sudah lewat 15 menit dari waktu issue tanpa pembayaran. Tagihan
+sekarang dalam status OVERDUE.
+
+  Invoice ID  : {{.InvoiceID}}
+  Total       : Rp {{.TotalIDR}}
+  Status      : OVERDUE
+
+⚠️ Akibat:
+  - Akun di-suspend sementara — kamu TIDAK BISA booking baru sampai bayar.
+  - Reminder email berikutnya 24 jam dari sekarang.
+  - Setelah 7 hari, akun bisa di-block permanen.
+
+Segera bayar via app:
+  Buka app → Tagihan → Bayar Sekarang.
+
+Kalau ada pertanyaan, hubungi customer service.
+
+—
+ParkirPintar Team
+support@parkirpintar.id

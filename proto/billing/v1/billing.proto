@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package billing.v1;
+
+option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/billing/v1;billingv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/types.proto";
+
+service BillingService {
+  // GetInvoice — return invoice + line items.
+  rpc GetInvoice(GetInvoiceRequest) returns (Invoice) {
+    option (google.api.http) = {
+      get: "/v1/invoices/{id}"
+    };
+  }
+
+  rpc GetInvoiceByReservation(GetInvoiceByReservationRequest) returns (Invoice) {
+    option (google.api.http) = {
+      get: "/v1/reservations/{reservation_id}/invoice"
+    };
+  }
+
+  // IssueInvoice — manual issue (biasanya event-driven, tapi expose untuk admin/debug).
+  rpc IssueInvoice(IssueInvoiceRequest) returns (Invoice) {
+    option (google.api.http) = {
+      post: "/v1/invoices:issue"
+      body: "*"
+    };
+  }
+
+  rpc MarkPaid(MarkPaidRequest) returns (Invoice) {
+    option (google.api.http) = {
+      post: "/v1/invoices/{id}:mark-paid"
+      body: "*"
+    };
+  }
+
+  // CountOverdueByDriver — dipakai reservation service untuk pre-check apakah
+  // driver punya tagihan tertunggak (block booking baru).
+  rpc CountOverdueByDriver(CountOverdueByDriverRequest) returns (CountOverdueByDriverResponse) {
+    option (google.api.http) = {
+      get: "/v1/drivers/{driver_id}/overdue-count"
+    };
+  }
+}
+
+// Lihat naming convention di proto/common/v1/types.proto.
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  DRAFT = 1;          // sebelum reservation checkout
+  ISSUED = 2;         // siap dibayar
+  PAID = 3;
+  VOID = 4;
+  // OVERDUE — invoice ISSUED tapi driver MANUAL mode tidak bayar dalam grace
+  // period. Lihat ADR-0014. Setelah OVERDUE, driver akan di-block dari booking
+  // baru sampai bayar.
+  OVERDUE = 5;
+}
+
+enum LineItemType {
+  LINE_ITEM_TYPE_UNSPECIFIED = 0;
+  BOOKING_FEE = 1;        // 5000 IDR per reservation
+  HOURLY = 2;             // 5000 IDR per started hour
+  OVERNIGHT = 3;          // 20000 IDR flat
+  NO_SHOW_PENALTY = 4;    // 5000 IDR
+}
+
+message InvoiceItem {
+  string id = 1;
+  LineItemType type = 2;
+  string description = 3;
+  common.v1.Money amount = 4;
+  google.protobuf.Timestamp period_start = 5;   // optional (untuk hourly)
+  google.protobuf.Timestamp period_end = 6;
+}
+
+message Invoice {
+  string id = 1;
+  string reservation_id = 2;
+  string driver_id = 3;
+  InvoiceStatus status = 4;
+  common.v1.Money total = 5;
+  repeated InvoiceItem items = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp issued_at = 8;
+  google.protobuf.Timestamp paid_at = 9;
+  google.protobuf.Timestamp overdue_at = 10;
+  // payment_mode di-forward dari reservation (AUTO atau MANUAL).
+  // AUTO → payment service auto-charge. MANUAL → driver manual scan QRIS.
+  common.v1.BillingMode payment_mode = 11;
+}
+
+message GetInvoiceRequest {
+  string id = 1;
+}
+
+message GetInvoiceByReservationRequest {
+  string reservation_id = 1;
+}
+
+message IssueInvoiceRequest {
+  string reservation_id = 1;
+}
+
+message MarkPaidRequest {
+  string id = 1;
+  string payment_id = 2;
+}
+
+message CountOverdueByDriverRequest {
+  string driver_id = 1;
+}
+
+message CountOverdueByDriverResponse {
+  int32 count = 1;
+}

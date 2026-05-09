@@ -1,0 +1,14 @@
+apiVersion: v2
+name: parkir-pintar
+description: ParkirPintar Smart Parking Backend
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - parking
+  - microservices
+  - go
+  - grpc
+maintainers:
+  - name: Aji Perdana Putra
+    email: ajiperdanaputra90@gmail.com

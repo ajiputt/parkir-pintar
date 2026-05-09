@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package payment.v1;
+
+option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/payment/v1;paymentv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/types.proto";
+
+service PaymentService {
+  // CreatePayment — generate QRIS untuk invoice.
+  rpc CreatePayment(CreatePaymentRequest) returns (Payment) {
+    option (google.api.http) = {
+      post: "/v1/payments"
+      body: "*"
+    };
+  }
+
+  rpc GetPayment(GetPaymentRequest) returns (Payment) {
+    option (google.api.http) = {
+      get: "/v1/payments/{id}"
+    };
+  }
+
+  // HandleWebhook — internal endpoint dipanggil gateway ketika Midtrans push notification.
+  // Public-facing route ada di gateway: POST /v1/payments/midtrans/notification
+  rpc HandleWebhook(WebhookPayload) returns (WebhookResponse);
+}
+
+// Lihat naming convention di proto/common/v1/types.proto.
+
+enum PaymentMethod {
+  PAYMENT_METHOD_UNSPECIFIED = 0;
+  QRIS = 1;
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PENDING = 1;
+  SUCCESS = 2;
+  FAILED = 3;
+  // Note: same identifier "EXPIRED" exists in common.v1.ReservationState — beda
+  // package, jadi tidak collision.
+  EXPIRED = 4;
+}
+
+message Payment {
+  string id = 1;
+  string invoice_id = 2;
+  PaymentMethod method = 3;
+  string gateway = 4;                    // "MIDTRANS"
+  string gateway_ref = 5;                // transaction_id dari gateway
+  string qr_string = 6;                  // raw QRIS payload untuk render
+  common.v1.Money amount = 7;
+  PaymentStatus status = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp settled_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+}
+
+message CreatePaymentRequest {
+  string invoice_id = 1;
+  PaymentMethod method = 2;
+}
+
+message GetPaymentRequest {
+  string id = 1;
+}
+
+message WebhookPayload {
+  string source = 1;                     // "midtrans"
+  string signature = 2;                  // header verification
+  bytes raw_payload = 3;
+}
+
+message WebhookResponse {
+  bool accepted = 1;
+}

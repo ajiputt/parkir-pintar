@@ -1,0 +1,219 @@
+# ParkirPintar — full-stack demo composition.
+#
+# Profiles:
+#   default      → core (postgres, redis, nats, all microservices, gateway)
+#   observability → tambahkan jaeger, prometheus, grafana
+#
+# Usage:
+#   make demo-up                              (default)
+#   docker compose --profile observability up (with O11y)
+
+name: parkirpintar
+
+services:
+  # ----- Infrastructure ------------------------------------------------------
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: parkir
+      POSTGRES_PASSWORD: parkir_dev_only
+      POSTGRES_DB: parkirpintar
+    ports: ["5432:5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../../migrations:/migrations:ro
+      - ../../scripts/init-db.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parkir -d parkirpintar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports: ["4222:4222", "8222:8222"]
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8222/healthz | grep -q ok || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes:
+      - ../../migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for s in reservation billing payment; do
+          echo "==> migrate $$s"
+          migrate -path /migrations/$$s \
+            -database "postgres://parkir:parkir_dev_only@postgres:5432/parkirpintar?sslmode=disable&search_path=$$s" up
+        done
+
+  seed:
+    image: postgres:16-alpine
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      DB_URL: "postgres://parkir:parkir_dev_only@postgres:5432/parkirpintar?sslmode=disable"
+    volumes:
+      - ../../scripts/seed.sh:/seed.sh:ro
+    entrypoint: ["/bin/sh", "/seed.sh"]
+
+  # ----- Microservices -------------------------------------------------------
+
+  reservation:
+    build:
+      context: ../..
+      dockerfile: services/reservation/Dockerfile
+    environment:
+      APP_ENV: dev
+      LOG_LEVEL: info
+      DB_URL: "postgres://parkir:parkir_dev_only@postgres:5432/parkirpintar?sslmode=disable&search_path=reservation"
+      REDIS_ADDR: redis:6379
+      NATS_URL: nats://nats:4222
+      NATS_STREAM: PARKIRPINTAR
+      RESERVATION_GRPC_ADDR: ":9091"
+      RESERVATION_HTTP_ADDR: ":9191"
+      RESERVATION_HOLD_DURATION: 1h
+      RESERVATION_EXPIRY_SCAN_INTERVAL: 30s
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      nats:     { condition: service_healthy }
+      seed:     { condition: service_completed_successfully }
+    ports: ["9091:9091", "9191:9191"]
+    healthcheck:
+      test: ["CMD", "/reservation", "--healthcheck"]   # placeholder; gunakan curl di prod
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  billing:
+    build:
+      context: ../..
+      dockerfile: services/billing/Dockerfile
+    environment:
+      APP_ENV: dev
+      LOG_LEVEL: info
+      DB_URL: "postgres://parkir:parkir_dev_only@postgres:5432/parkirpintar?sslmode=disable&search_path=billing"
+      NATS_URL: nats://nats:4222
+      NATS_STREAM: PARKIRPINTAR
+      BILLING_HTTP_ADDR: ":9192"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+      seed:     { condition: service_completed_successfully }
+    ports: ["9092:9092", "9192:9192"]
+
+  payment:
+    build:
+      context: ../..
+      dockerfile: services/payment/Dockerfile
+    environment:
+      APP_ENV: dev
+      LOG_LEVEL: info
+      DB_URL: "postgres://parkir:parkir_dev_only@postgres:5432/parkirpintar?sslmode=disable&search_path=payment"
+      NATS_URL: nats://nats:4222
+      PAYMENT_HTTP_ADDR: ":9193"
+      PAYMENT_MOCK_MODE: ${PAYMENT_MOCK_MODE:-true}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-SB-Mid-server-FAKE}
+      MIDTRANS_BASE_URL: https://api.sandbox.midtrans.com
+      BILLING_HTTP_URL: http://billing:9192
+      BILLING_STUB: "false"
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+      billing:  { condition: service_started }
+    ports: ["9093:9093", "9193:9193"]
+
+  # search & presence: deferred (lihat docs/architecture/adr/0009).
+  # Untuk re-enable, restore service definition + Dockerfile dari git history.
+
+  notification:
+    build:
+      context: ../..
+      dockerfile: services/notification/Dockerfile
+    environment:
+      APP_ENV: dev
+      NATS_URL: nats://nats:4222
+      NATS_STREAM: PARKIRPINTAR
+    depends_on:
+      nats: { condition: service_healthy }
+    ports: ["9196:9196"]
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      APP_ENV: dev
+      GATEWAY_HTTP_PORT: ":8080"
+      JWT_SECRET: dev-only-secret
+      RESERVATION_HTTP_URL: http://reservation:9191
+      BILLING_HTTP_URL: http://billing:9192
+      PAYMENT_HTTP_URL: http://payment:9193
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    depends_on:
+      reservation: { condition: service_started }
+      billing:     { condition: service_started }
+      payment:     { condition: service_started }
+    ports: ["8080:8080"]
+
+  # ----- Observability (profile: observability) ------------------------------
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    profiles: ["observability"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["observability"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on: [prometheus]
+    ports: ["3000:3000"]
+
+volumes:
+  pg_data:
+  redis_data:
+  nats_data:
+  grafana_data:

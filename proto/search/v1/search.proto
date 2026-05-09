@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package search.v1;
+
+option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/search/v1;searchv1";
+
+import "google/api/annotations.proto";
+import "common/v1/types.proto";
+
+// SearchService — read-side projection availability.
+// Untuk demo masih delegate ke ReservationService; production akan punya read store sendiri.
+service SearchService {
+  rpc QuerySpots(QuerySpotsRequest) returns (QuerySpotsResponse) {
+    option (google.api.http) = {
+      get: "/v1/search/spots"
+    };
+  }
+}
+
+message QuerySpotsRequest {
+  common.v1.VehicleType vehicle_type = 1;
+  optional int32 preferred_floor = 2;
+}
+
+message QuerySpotsResponse {
+  repeated common.v1.Spot spots = 1;
+}

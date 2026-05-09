@@ -1,0 +1,121 @@
+# EKS-specific overrides.
+#
+# Usage:
+#   helm upgrade --install parkir-pintar deploy/helm/parkir-pintar \
+#     -f deploy/helm/parkir-pintar/values.yaml \
+#     -f deploy/helm/parkir-pintar/values.eks.yaml \
+#     --set global.imageTag=$GITHUB_SHA
+#
+# Lihat: docs/deployment/aws-eks-architecture.md
+# ADR:    docs/architecture/adr/0017-deployment-eks.md
+
+global:
+  # Switch image registry ke ECR (low-egress dalam same region).
+  # Replace <ACCOUNT> dengan AWS account ID actual saat deploy.
+  imageRegistry: <ACCOUNT>.dkr.ecr.ap-southeast-1.amazonaws.com/parkir-pintar
+  imagePullPolicy: IfNotPresent
+  imageTag: latest
+  env: production
+  domain: api.parkirpintar.example.com
+  storageClass: gp3
+
+  # EKS-specific feature flag — enable IRSA annotation di ServiceAccount.
+  eks:
+    enabled: true
+    accountId: "123456789012"   # ganti dengan AWS account
+    region: ap-southeast-1
+
+# ---- Per-service IRSA role ARN ----
+# IAM role harus pre-create dulu (lihat docs/deployment/aws-eks-architecture.md §5.3).
+services:
+  gateway:
+    enabled: true
+    replicas: 3
+    iamRoleArn: ""   # gateway: tidak perlu AWS access (TLS via ACM, no API call)
+
+  reservation:
+    enabled: true
+    replicas: 3
+    iamRoleArn: arn:aws:iam::123456789012:role/parkir-reservation
+    holdDuration: "1h"
+    expiryScanInterval: "30s"
+
+  billing:
+    enabled: true
+    replicas: 2
+    iamRoleArn: arn:aws:iam::123456789012:role/parkir-billing
+
+  payment:
+    enabled: true
+    replicas: 2
+    iamRoleArn: arn:aws:iam::123456789012:role/parkir-payment
+    midtrans:
+      mockMode: false
+      serverKeySecret: parkir-secrets
+      serverKeySecretKey: midtrans-server-key
+
+  notification:
+    enabled: true
+    replicas: 1
+    iamRoleArn: arn:aws:iam::123456789012:role/parkir-notification   # SES + SecretsManager
+
+# ---- Ingress: AWS Load Balancer Controller (ALB) ----
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:123456789012:certificate/xxx-yyy-zzz
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/group.name: parkir
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=60
+  tls:
+    enabled: true   # TLS terminated di ALB via ACM cert (lihat annotations di atas)
+
+# ---- External dependencies (managed services) ----
+postgres:
+  external: true
+  host: parkir-rds.cluster-xxx.ap-southeast-1.rds.amazonaws.com
+  port: 5432
+  databaseSecret: parkir-secrets    # ESO-synced dari Secrets Manager
+  databaseSecretKey: db-url
+
+redis:
+  external: true
+  addr: parkir-redis.xxx.cache.amazonaws.com:6379
+
+# NATS: in-cluster StatefulSet via separate Helm release (nats-io/nats chart).
+# Default: connect ke cluster-local nats service.
+nats:
+  external: true
+  url: nats://nats.parkir-system.svc.cluster.local:4222
+  stream: PARKIRPINTAR
+
+# ---- Observability ----
+opentelemetry:
+  enabled: true
+  endpoint: otel-collector.observability.svc.cluster.local:4317
+
+# ---- Security: PodSecurityContext sudah di values.yaml, override seperlunya saja ----
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+
+# NetworkPolicy aktif by default — kalau ada add-on (FluentBit, kube-prometheus)
+# yang perlu connect, tambah egress rule di templates/networkpolicy.yaml.
+networkPolicy:
+  enabled: true

@@ -1,0 +1,39 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default deny + allow gateway → backends, all → DB/Redis/NATS via egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-default
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-to-backends
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: parkir-pintar
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+    - from: []   # ingress dari ingress controller
+      ports:
+        - port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: parkir-pintar
+    - to: []     # external (DB, Redis, NATS, Midtrans). Restrict via CIDR di prod.
+      ports:
+        - port: 5432
+        - port: 6379
+        - port: 4222
+        - port: 443
+{{- end }}

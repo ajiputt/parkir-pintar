@@ -1,0 +1,63 @@
+run:
+  timeout: 5m
+  go: "1.22"
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - gocritic
+    - gocyclo
+    - goimports
+    - gofmt
+    - misspell
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+    - revive
+    - prealloc
+    - nilerr
+    - errorlint
+    - exhaustive
+    - contextcheck
+    - durationcheck
+    - copyloopvar
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  goimports:
+    local-prefixes: github.com/ajiperdana/parkir-pintar
+  errorlint:
+    errorf: true
+  exhaustive:
+    default-signifies-exhaustive: true
+  revive:
+    rules:
+      - name: var-naming
+      - name: package-comments
+      - name: exported
+        arguments:
+          - "checkPrivateReceivers"
+          - "disableStutteringCheck"
+
+issues:
+  exclude-dirs:
+    - bin
+    - proto/gen
+    - vendor
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - gosec
+  max-issues-per-linter: 0
+  max-same-issues: 0

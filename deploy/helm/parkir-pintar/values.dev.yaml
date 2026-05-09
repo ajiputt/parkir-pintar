@@ -1,0 +1,25 @@
+# Dev overrides
+global:
+  env: dev
+  imageTag: dev
+
+services:
+  gateway:
+    replicas: 1
+    autoscaling: { enabled: false }
+  reservation:
+    replicas: 1
+    autoscaling: { enabled: false }
+  billing:
+    replicas: 1
+  payment:
+    replicas: 1
+    midtrans:
+      mockMode: true
+  # search & presence: deferred (ADR-0009). enabled=false dari values.yaml.
+  notification:
+    replicas: 1
+
+ingress:
+  tls: { enabled: false }
+  className: nginx

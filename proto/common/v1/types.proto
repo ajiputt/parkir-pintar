@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/common/v1;commonv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Money — value object Rupiah, integer (no float).
+message Money {
+  // Amount in IDR (smallest unit = 1 IDR; tidak ada subdivisi).
+  int64 amount = 1;
+  // Currency code, e.g. "IDR".
+  string currency = 2;
+}
+
+// ENUM NAMING CONVENTION:
+//   - Zero value: keep `<TYPE>_UNSPECIFIED` (enum values share package scope di
+//     proto3, jadi UNSPECIFIED tidak boleh duplicate per package).
+//   - Non-zero values: short form tanpa prefix (e.g. CAR bukan VEHICLE_TYPE_CAR)
+//     untuk JSON ergonomics — client kirim "CAR" instead of "VEHICLE_TYPE_CAR".
+//
+// Trade-off: violates buf DEFAULT lint rule ENUM_VALUE_PREFIX. Di-except di
+// proto/buf.yaml dengan justification collision-free domain.
+
+enum VehicleType {
+  VEHICLE_TYPE_UNSPECIFIED = 0;
+  CAR = 1;
+  MOTOR = 2;
+}
+
+enum SpotStatus {
+  SPOT_STATUS_UNSPECIFIED = 0;
+  AVAILABLE = 1;
+  HELD = 2;
+  OCCUPIED = 3;
+  OUT_OF_SERVICE = 4;
+}
+
+enum ReservationState {
+  RESERVATION_STATE_UNSPECIFIED = 0;
+  CONFIRMED = 1;
+  CHECKED_IN = 2;
+  CHECKED_OUT = 3;
+  CANCELLED = 4;
+  EXPIRED = 5;
+}
+
+enum AssignmentMode {
+  ASSIGNMENT_MODE_UNSPECIFIED = 0;
+  // Sistem assign otomatis spot tercepat (default).
+  SYSTEM = 1;
+  // User pilih spot spesifik (potensi kontensi).
+  USER = 2;
+}
+
+// BillingMode — payment behavior saat reservation di-finalize.
+//
+// Lihat ADR-0014 (hybrid payment).
+enum BillingMode {
+  BILLING_MODE_UNSPECIFIED = 0;
+  // AUTO: saldo wallet auto-debit saat invoice ISSUED. No QRIS step.
+  // Cocok untuk driver dengan saldo pre-loaded.
+  AUTO = 1;
+  // MANUAL: driver harus call CreatePayment + scan QRIS. Invoice tetap ISSUED
+  // sampai webhook Midtrans datang. Bisa OVERDUE kalau driver tidak bayar.
+  MANUAL = 2;
+}
+
+message Spot {
+  string id = 1;
+  string code = 2;             // mis. "F2-C-007" = floor 2, car, slot 7
+  int32 floor_level = 3;
+  VehicleType vehicle_type = 4;
+  SpotStatus status = 5;
+}
+
+message Page {
+  int32 size = 1;              // default 50, max 200
+  string page_token = 2;       // opaque cursor
+}
+
+message PageResponse {
+  string next_page_token = 1;
+  int32 total = 2;             // optional, kalau cheap untuk dihitung
+}

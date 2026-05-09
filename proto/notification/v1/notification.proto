@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package notification.v1;
+
+option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/notification/v1;notificationv1";
+
+import "google/api/annotations.proto";
+
+// NotificationService — push/email/SMS dispatcher.
+// Untuk demo backend: log-based mock. Production: SES/SNS/FCM adapter.
+service NotificationService {
+  rpc SendNotification(SendNotificationRequest) returns (SendNotificationResponse) {
+    option (google.api.http) = {
+      post: "/v1/notifications:send"
+      body: "*"
+    };
+  }
+}
+
+enum Channel {
+  CHANNEL_UNSPECIFIED = 0;
+  CHANNEL_PUSH = 1;
+  CHANNEL_EMAIL = 2;
+  CHANNEL_SMS = 3;
+}
+
+message SendNotificationRequest {
+  string driver_id = 1;
+  Channel channel = 2;
+  string title = 3;
+  string body = 4;
+  map<string, string> data = 5;
+}
+
+message SendNotificationResponse {
+  string id = 1;
+  bool dispatched = 2;
+}

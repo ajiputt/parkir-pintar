@@ -1,0 +1,95 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'   # weekly Monday 04:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  gosec:
+    name: gosec (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt sarif -out gosec.sarif ./...'
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: gosec.sarif }
+
+  govulncheck:
+    name: govulncheck (CVE scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: |
+          for m in pkg services/reservation services/billing services/payment services/gateway; do
+            echo "==> $m"
+            (cd $m && govulncheck ./...) || true
+          done
+
+  trivy:
+    name: Trivy (image + IaC scan)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [gateway, reservation, billing, payment]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t parkir-pintar/${{ matrix.service }}:scan -f services/${{ matrix.service }}/Dockerfile .
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: parkir-pintar/${{ matrix.service }}:scan
+          severity: 'HIGH,CRITICAL'
+          exit-code: '0'   # demo: log only. Production: '1'.
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: trivy-${{ matrix.service }}.sarif }
+
+  iac-scan:
+    name: Terraform / Helm scan (Checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: terraform,helm,dockerfile,kubernetes
+          soft_fail: true
+          output_format: sarif
+          output_file_path: checkov.sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: checkov.sarif }
+
+  secrets-scan:
+    name: Secret leakage check (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

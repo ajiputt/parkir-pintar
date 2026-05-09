@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package presence.v1;
+
+option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/presence/v1;presencev1";
+
+// PresenceService — real-time location updates dari smartphone driver.
+// Bidirectional stream untuk efisiensi, server bisa kirim hint (e.g. "kamu sudah di geofence").
+service PresenceService {
+  rpc StreamLocation(stream LocationUpdate) returns (stream PresenceHint);
+}
+
+message LocationUpdate {
+  string driver_id = 1;
+  double latitude = 2;
+  double longitude = 3;
+  double accuracy_meters = 4;
+  int64 client_timestamp_ms = 5;
+}
+
+enum HintType {
+  HINT_TYPE_UNSPECIFIED = 0;
+  HINT_TYPE_ENTERED_GEOFENCE = 1;
+  HINT_TYPE_EXITED_GEOFENCE = 2;
+  HINT_TYPE_NEAR_PARKING = 3;
+}
+
+message PresenceHint {
+  HintType type = 1;
+  string message = 2;
+}

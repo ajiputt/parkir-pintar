@@ -1,0 +1,204 @@
+syntax = "proto3";
+
+package reservation.v1;
+
+option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/reservation/v1;reservationv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/types.proto";
+
+service ReservationService {
+  // GetAvailability — return realtime count per floor & vehicle type.
+  rpc GetAvailability(GetAvailabilityRequest) returns (GetAvailabilityResponse) {
+    option (google.api.http) = {
+      get: "/v1/availability"
+    };
+  }
+
+  // ListSpots — list spot dengan filter.
+  rpc ListSpots(ListSpotsRequest) returns (ListSpotsResponse) {
+    option (google.api.http) = {
+      get: "/v1/spots"
+    };
+  }
+
+  // CreateReservation — booking. Wajib idempotent (header x-idempotency-key).
+  rpc CreateReservation(CreateReservationRequest) returns (CreateReservationResponse) {
+    option (google.api.http) = {
+      post: "/v1/reservations"
+      body: "*"
+    };
+  }
+
+  rpc GetReservation(GetReservationRequest) returns (Reservation) {
+    option (google.api.http) = {
+      get: "/v1/reservations/{id}"
+    };
+  }
+
+  rpc CancelReservation(CancelReservationRequest) returns (Reservation) {
+    option (google.api.http) = {
+      post: "/v1/reservations/{id}:cancel"
+      body: "*"
+    };
+  }
+
+  rpc CheckIn(CheckInRequest) returns (Reservation) {
+    option (google.api.http) = {
+      post: "/v1/reservations/{id}:checkin"
+      body: "*"
+    };
+  }
+
+  rpc CheckOut(CheckOutRequest) returns (Reservation) {
+    option (google.api.http) = {
+      post: "/v1/reservations/{id}:checkout"
+      body: "*"
+    };
+  }
+}
+
+message Reservation {
+  string id = 1;
+  string driver_id = 2;
+  common.v1.Spot spot = 3;
+  string plate_no = 4;
+  common.v1.ReservationState state = 5;
+  // Expected arrival time (default = now untuk booking instant).
+  google.protobuf.Timestamp start_at = 6;
+  // Field 7 (end_at) di-DEPRECATED — lihat ADR-0011 (anti-overlap via partial
+  // unique index, bukan tsrange EXCLUDE). Driver gak tau kapan keluar — billing
+  // dihitung dari actual checkin_at sampai checkout_at.
+  reserved 7;
+  reserved "end_at";
+  // Hold deadline = start_at + holdDuration (default 1h). Lewat ini auto-cancel.
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp checkin_at = 9;
+  google.protobuf.Timestamp checkout_at = 10;
+  common.v1.AssignmentMode assignment_mode = 11;
+  google.protobuf.Timestamp created_at = 12;
+  common.v1.BillingMode payment_mode = 13;
+}
+
+// ---- GetAvailability ----
+message GetAvailabilityRequest {
+  string parking_area_id = 1;       // optional, default ke "main"
+}
+
+message FloorAvailability {
+  int32 level = 1;
+  int32 car_available = 2;
+  int32 car_capacity = 3;
+  int32 motor_available = 4;
+  int32 motor_capacity = 5;
+}
+
+message GetAvailabilityResponse {
+  string parking_area_id = 1;
+  string parking_area_name = 2;
+  int32 total_car_available = 3;
+  int32 total_motor_available = 4;
+  repeated FloorAvailability floors = 5;
+  google.protobuf.Timestamp as_of = 6;
+}
+
+// ---- ListSpots ----
+//
+// Use case: USER-assigned booking flow. Driver get spots **grouped per floor**
+// (match layout fisik gedung — easy untuk UI render). Driver lihat per-floor
+// list, pilih satu, kirim CreateReservation dengan mode=USER + spot_id.
+//
+// Pagination DIDROP karena ParkirPintar single-area max 400 spot (5 × ~80)
+// fit dalam 1 response. Kalau ekspansi mall besar, hybrid pagination per-floor
+// bisa di-add via field future.
+message ListSpotsRequest {
+  // Field 1 (parking_area_id) di-DEPRECATED — single-area assumption (lihat ADR-0011).
+  reserved 1;
+  reserved "parking_area_id";
+
+  // Filter ke 1 floor saja (optional). Kalau set, response cuma 1 entry di floors[].
+  optional int32 floor_level = 2;
+  optional common.v1.VehicleType vehicle_type = 3;
+  // Default = AVAILABLE kalau tidak di-set (use case utamanya driver cari spot kosong).
+  optional common.v1.SpotStatus status = 4;
+
+  // Field 5 (page) di-DEPRECATED — pagination dropped, response per-floor.
+  reserved 5;
+  reserved "page";
+}
+
+message ListSpotsResponse {
+  repeated FloorSpots floors = 1;
+  // Total spot match filter (sum dari semua floors[].spots length).
+  int32 total = 2;
+}
+
+// FloorSpots — bundled spots untuk satu lantai.
+message FloorSpots {
+  int32 level = 1;
+  repeated common.v1.Spot spots = 2;
+  // Convenience metadata untuk UI: count ini bisa beda dari spots.length kalau
+  // filter status di-apply (mis. capacity 30 tapi available cuma 5).
+  int32 capacity = 3;   // total spot di floor (untuk vehicle_type kalau filter set)
+  int32 available = 4;  // count yang status=AVAILABLE
+}
+
+// ---- CreateReservation ----
+message CreateReservationRequest {
+  string driver_id = 1;
+  string plate_no = 2;
+  common.v1.VehicleType vehicle_type = 3;
+  common.v1.AssignmentMode mode = 4;
+
+  // Wajib jika mode = USER (driver pilih spot spesifik).
+  // Untuk SYSTEM, sistem assign spot kosong dengan floor terendah.
+  optional string spot_id = 5;
+
+  // Expected arrival time. Hold expiry = start_at + holdDuration (default 1h).
+  // Driver harus check-in sebelum expiry — kalau tidak, reservation auto-cancelled
+  // dan akan dikenakan no-show penalty 5000 IDR.
+  // Kalau kosong, server pakai now() (booking instant).
+  google.protobuf.Timestamp start_at = 6;
+
+  // Field 7 (end_at) di-DEPRECATED — lihat ADR-0011. Driver gak tau kapan keluar.
+  // Anti-overlap pakai partial unique index `WHERE state IN ('CONFIRMED','CHECKED_IN')`
+  // bukan tsrange EXCLUDE, jadi end_at tidak diperlukan. Billing tetap dihitung
+  // dari actual checkin_at sampai checkout_at.
+  reserved 7;
+  reserved "end_at";
+
+  // (parking_area_id sengaja tidak ada — single-area assumption.
+  //  Kalau ekspansi multi-area, tambah field di sini + tenant context middleware.)
+
+  // Payment mode (REQUIRED). AUTO = wallet auto-debit. MANUAL = QRIS scan.
+  // Lihat ADR-0014 untuk hybrid model.
+  common.v1.BillingMode payment_mode = 8;
+}
+
+message CreateReservationResponse {
+  Reservation reservation = 1;
+  // Booking fee yang akan ditagih (5000 IDR, sesuai use case).
+  common.v1.Money booking_fee = 2;
+}
+
+// ---- GetReservation ----
+message GetReservationRequest {
+  string id = 1;
+}
+
+// ---- CancelReservation ----
+message CancelReservationRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+// ---- CheckIn ----
+message CheckInRequest {
+  string id = 1;
+}
+
+// ---- CheckOut ----
+message CheckOutRequest {
+  string id = 1;
+}

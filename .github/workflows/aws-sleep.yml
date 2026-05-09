@@ -1,0 +1,85 @@
+name: AWS — Sleep (end working day)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'demo'
+        type: choice
+        options: [demo, staging]
+  # Auto-sleep tiap weekday jam 19:00 WIB (= 12:00 UTC)
+  schedule:
+    - cron: '0 12 * * 1-5'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-southeast-1
+
+jobs:
+  sleep:
+    name: Sleep AWS stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve env
+        id: env
+        run: |
+          ENV="${{ github.event.inputs.environment || 'demo' }}"
+          echo "env=$ENV" >> $GITHUB_OUTPUT
+          # Safety: jangan pernah sleep prod via schedule
+          if [ "$ENV" = "prod" ]; then
+            echo "❌ Refuse to sleep prod"
+            exit 1
+          fi
+
+      - name: Scale ECS services to zero
+        run: |
+          CLUSTER="parkir-${{ steps.env.outputs.env }}"
+          # search & presence: deferred (ADR-0009)
+          for svc in gateway reservation billing payment notification; do
+            echo "==> Scale $svc → 0"
+            aws ecs update-service \
+              --cluster $CLUSTER --service $svc \
+              --desired-count 0 \
+              --no-cli-pager > /dev/null || true
+          done
+
+      - name: Stop RDS instance
+        run: |
+          INSTANCE="parkir-${{ steps.env.outputs.env }}"
+          STATUS=$(aws rds describe-db-instances --db-instance-identifier $INSTANCE \
+            --query 'DBInstances[0].DBInstanceStatus' --output text 2>/dev/null || echo "missing")
+          if [ "$STATUS" = "available" ]; then
+            echo "Stopping RDS (max 7 hari sebelum auto-restart)..."
+            aws rds stop-db-instance --db-instance-identifier $INSTANCE || true
+          else
+            echo "RDS status=$STATUS — skip"
+          fi
+
+      - name: Cost report
+        run: |
+          # Approx hourly savings
+          echo "💸 Per-jam dimatikan kurang lebih hemat:"
+          echo "   ECS Fargate (6 svc):   ~\$0.074/jam"
+          echo "   RDS db.t3.micro:       ~\$0.026/jam (compute saja, storage tetap charged)"
+          echo "   Total saved:           ~\$0.10/jam = ~\$1/hari kalau mati 10 jam"
+          echo ""
+          echo "Sisa charge yg jalan terus (passive):"
+          echo "   ALB:                   \$0.022/jam = \$16/bulan kalau full"
+          echo "   ElastiCache:           \$0.022/jam = \$16/bulan (no-stop)"
+          echo "   NAT Gateway:           \$0.045/jam = \$32/bulan (no-stop)"
+          echo "   RDS storage 20GB:      \$2.30/bulan"
+          echo ""
+          echo "Untuk hemat lebih, jalankan workflow 'aws-teardown.yml' weekend."

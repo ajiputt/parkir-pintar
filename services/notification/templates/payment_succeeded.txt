@@ -1,0 +1,18 @@
+Subject: [ParkirPintar] Pembayaran Berhasil - Rp {{.AmountIDR}}
+
+Halo {{.DriverName}},
+
+Pembayaran kamu berhasil diproses!
+
+  Payment ID  : {{.PaymentID}}
+  Invoice ID  : {{.InvoiceID}}
+  Jumlah      : Rp {{.AmountIDR}}
+
+Resi resmi akan tersedia di app dalam beberapa menit. Terima kasih sudah
+parkir di ParkirPintar.
+
+Sampai jumpa lagi!
+
+—
+ParkirPintar Team
+support@parkirpintar.id

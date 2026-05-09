@@ -1,0 +1,20 @@
+Subject: [ParkirPintar] Booking Dikonfirmasi - Reservasi {{.ReservationID}}
+
+Halo {{.DriverName}},
+
+Reservasi parkir kamu sudah dikonfirmasi. Berikut detailnya:
+
+  Reservation ID  : {{.ReservationID}}
+  Plat Nomor      : {{.PlateNo}}
+  Spot ID         : {{.SpotID}}
+  Mulai           : {{.StartAt}}
+  Hold Deadline   : {{.ExpiresAt}}
+
+Silakan check-in sebelum hold deadline. Kalau tidak, reservasi akan otomatis
+di-cancel dan dikenakan no-show penalty Rp 5.000.
+
+Terima kasih sudah pakai ParkirPintar!
+
+—
+ParkirPintar Team
+support@parkirpintar.id

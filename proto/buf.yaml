@@ -1,0 +1,19 @@
+version: v2
+modules:
+  - path: .
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+lint:
+  use:
+    - DEFAULT
+  except:
+    - PACKAGE_VERSION_SUFFIX
+    # ENUM_VALUE_PREFIX di-except: kita pakai short form (CAR, SYSTEM, PAID)
+    # untuk JSON ergonomics. Lihat naming convention di proto/common/v1/types.proto.
+    # Zero values tetap pakai prefix (VEHICLE_TYPE_UNSPECIFIED dst) karena proto3
+    # enum values share package scope.
+    - ENUM_VALUE_PREFIX
+breaking:
+  use:
+    - FILE

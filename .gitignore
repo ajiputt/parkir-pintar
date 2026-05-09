@@ -1,0 +1,137 @@
+# =============================================================================
+# ParkirPintar — .gitignore
+# =============================================================================
+# Konvensi: kelompok per kategori, dengan komentar penjelas supaya kontributor
+# baru tahu ALASAN kenapa file di-ignore. Kalau menambahkan pattern baru,
+# beri komentar singkat.
+# =============================================================================
+
+# ----- Binary & build artifacts ----------------------------------------------
+# Output `go build`, test binaries, coverage profile.
+bin/
+dist/
+*.exe
+*.test
+*.out
+
+# ----- Coverage --------------------------------------------------------------
+# Generated `go test -coverprofile`. Re-generate via `make cover`.
+coverage.out
+*.cover
+profile.cov
+
+# ----- Generated code --------------------------------------------------------
+# Output `make proto` (buf generate). Regenerable, jangan commit.
+proto/gen/
+
+# ----- Editor / IDE ----------------------------------------------------------
+# Per-developer preference. Pakai .editorconfig untuk shared formatting.
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ----- Env vars & secrets ----------------------------------------------------
+# .env berisi secret aktual (DB password, API key). Hanya .env.example yang
+# di-commit sebagai template (perhatikan `!` whitelist di bawah).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# ----- Terraform -------------------------------------------------------------
+# State berisi credential & resource detail — WAJIB di S3 backend, bukan git.
+# Lock file & .terraform/ di-regenerate per `terraform init`.
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+.terraform.lock.hcl
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ----- Helm ------------------------------------------------------------------
+# Packaged chart artifacts — published ke OCI registry, bukan git.
+deploy/helm/*/charts/*.tgz
+deploy/helm/*/Chart.lock
+
+# ----- Docker ----------------------------------------------------------------
+# Volume data persistent — kalau ke-commit bisa leak credential.
+deploy/docker/data/
+deploy/docker/volumes/
+
+# ----- Go workspace ----------------------------------------------------------
+# go.sum.bak biasanya muncul saat module restructure.
+go.sum.bak
+vendor/
+
+# ----- AWS CLI / SAM ---------------------------------------------------------
+.aws-sam/
+samconfig.toml.local
+
+# ----- Personal notes & panduan ---------------------------------------------
+# Catatan pribadi penulis (preparation note, slide draft, transcription
+# meeting, dll.) yang tidak boleh masuk repo. Letakkan di salah satu folder
+# di bawah supaya otomatis ter-ignore tanpa risk lupa.
+panduan/
+panduan-*.md
+panduan-*.txt
+notes/
+notes-*.md
+notes-*.txt
+.private/
+.private-*
+*-personal.md
+*-draft.md
+*-WIP.md
+*.scratch.md
+TODO.md
+TODO-*.md
+SCRATCH.md
+
+# Kalau pakai `gh issue/PR template draft`:
+.github/drafts/
+
+# ----- Slide / presentation drafts -------------------------------------------
+# Materi presentasi assessment (sering punya internal info / nama assessor).
+slides/
+presentation/
+*.pptx.draft
+
+# ----- OS / temp -------------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.orig
+*~
+
+# ----- Logs ------------------------------------------------------------------
+# Local debug logs (semestinya log via stdout untuk container).
+logs/
+*.log
+!CHANGELOG.log    # whitelist kalau ada release log
+
+# ----- Test artifacts --------------------------------------------------------
+# k6 result, integration test output.
+test/load/results/
+test/integration/output/
+testdata/tmp/
+/.editorconfig
+/services/reservation/__debug_bin.exe981921916
+/services/gateway/__debug_bin.exe2508384549
+/deploy/terraform/aws-ecs/COST.md
+/scripts/dev/
+/scripts/simulate-midtrans-webhook.sh
+/scripts/demo.sh
+/scripts/e2e.sh

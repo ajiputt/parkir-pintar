@@ -1,0 +1,15 @@
+go 1.24
+
+use (
+	./pkg
+	./proto
+	./services/billing
+	./services/gateway
+	./services/notification
+	./services/payment
+	./services/reservation
+	./test
+)
+
+// search & presence: deferred (lihat docs/architecture/adr/0009-defer-search-presence-services.md).
+// Kontrak proto tetap di proto/search/v1/ & proto/presence/v1/ sebagai forward-ready API.

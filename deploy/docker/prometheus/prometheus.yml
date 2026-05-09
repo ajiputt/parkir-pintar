@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # search & presence: deferred (lihat docs/architecture/adr/0009)
+  - job_name: 'parkirpintar'
+    static_configs:
+      - targets:
+          - 'gateway:8080'
+          - 'reservation:9191'
+          - 'billing:9192'
+          - 'payment:9193'
+          - 'notification:9196'
+    metrics_path: /metrics

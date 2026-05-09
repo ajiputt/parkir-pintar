@@ -1,0 +1,25 @@
+Subject: [ParkirPintar] Reservasi Expired - {{.ReservationID}}
+
+Halo {{.DriverName}},
+
+Reservasi kamu sudah lewat dari hold deadline tanpa check-in. Reservasi
+otomatis di-cancel.
+
+  Reservation ID  : {{.ReservationID}}
+  Plat Nomor      : {{.PlateNo}}
+  Hold Deadline   : {{.ExpiresAt}}
+
+Tagihan yang akan dikenakan:
+  - Booking fee       : Rp 5.000
+  - No-show penalty   : Rp 5.000
+  ------------------------------
+  Total               : Rp 10.000
+
+Tagihan ini akan di-debit otomatis dari saldo kamu. Cek invoice untuk detail.
+
+Mohon perhatikan hold deadline di reservasi berikutnya untuk menghindari
+penalty serupa.
+
+—
+ParkirPintar Team
+support@parkirpintar.id

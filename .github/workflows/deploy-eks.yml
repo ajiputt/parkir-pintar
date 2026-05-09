@@ -1,0 +1,220 @@
+name: Deploy to AWS EKS
+
+# Manual trigger only — production deploy harus deliberate.
+# Build images via ci.yml otomatis di main push, lalu trigger deploy ini
+# dengan image_tag yang sudah di-publish.
+#
+# OIDC ke AWS — no long-lived AWS keys.
+# Helm-based deploy ke EKS cluster, idempotent.
+# Lihat: docs/deployment/aws-eks-architecture.md
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'demo'
+        type: choice
+        options: [demo, staging, prod]
+      image_tag:
+        description: 'Image tag (default: short SHA dari current commit di main)'
+        required: false
+        default: ''
+      service_filter:
+        description: 'Comma-separated services (default: all). Mis. "reservation" untuk single service'
+        required: false
+        default: 'all'
+      dry_run:
+        description: 'Helm --dry-run (preview tanpa apply)'
+        required: true
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: read
+  id-token: write   # OIDC ke AWS
+
+env:
+  AWS_REGION: ap-southeast-1
+  HELM_VERSION: v3.15.0
+  KUBECTL_VERSION: v1.30.0
+
+jobs:
+  deploy:
+    name: Deploy ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ----- Resolve image tag -----
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+
+      # ----- Configure AWS via OIDC -----
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Account ID
+        id: account
+        run: echo "id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
+
+      # ----- Login ECR -----
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin \
+              ${{ steps.account.outputs.id }}.dkr.ecr.$AWS_REGION.amazonaws.com
+
+      # ----- Verify image ada di ECR sebelum deploy -----
+      - name: Verify image exists in ECR
+        run: |
+          REGISTRY="${{ steps.account.outputs.id }}.dkr.ecr.$AWS_REGION.amazonaws.com"
+          MISSING=0
+          for svc in gateway reservation billing payment notification; do
+            if ! aws ecr describe-images \
+                --repository-name parkir-pintar/$svc \
+                --image-ids imageTag=${{ steps.tag.outputs.tag }} \
+                --region $AWS_REGION >/dev/null 2>&1; then
+              echo "❌ Image not found: parkir-pintar/$svc:${{ steps.tag.outputs.tag }}"
+              MISSING=$((MISSING+1))
+            else
+              echo "✅ Found: parkir-pintar/$svc:${{ steps.tag.outputs.tag }}"
+            fi
+          done
+          if [ $MISSING -gt 0 ]; then
+            echo "Run ci.yml first to publish images."
+            exit 1
+          fi
+
+      # ----- Setup tools -----
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      # ----- Update kubeconfig -----
+      - name: Configure kubectl ke EKS cluster
+        run: |
+          aws eks update-kubeconfig \
+            --name parkir-${{ github.event.inputs.environment }} \
+            --region $AWS_REGION
+          kubectl config current-context
+          kubectl get nodes
+
+      # ----- Helm dry-run (preview) -----
+      - name: Helm dry-run preview
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          helm upgrade --install parkir-pintar deploy/helm/parkir-pintar \
+            --namespace parkir --create-namespace \
+            -f deploy/helm/parkir-pintar/values.yaml \
+            -f deploy/helm/parkir-pintar/values.eks.yaml \
+            --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/parkir-pintar \
+            --set global.imageTag=${{ steps.tag.outputs.tag }} \
+            --set global.eks.accountId=${{ steps.account.outputs.id }} \
+            --set global.env=${{ github.event.inputs.environment }} \
+            --dry-run --debug | tee /tmp/helm-plan.yaml
+
+      - name: Upload dry-run output
+        if: github.event.inputs.dry_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-plan-${{ steps.tag.outputs.tag }}
+          path: /tmp/helm-plan.yaml
+
+      # ----- Apply ExternalSecret (sync Secrets Manager → K8s Secret) -----
+      - name: Apply ExternalSecret manifest
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          kubectl apply -f deploy/k8s/eks/external-secret.yaml --namespace parkir
+          # Tunggu secret ter-populate (ESO refresh)
+          for i in $(seq 1 30); do
+            if kubectl get secret parkir-secrets -n parkir >/dev/null 2>&1; then
+              echo "✅ parkir-secrets populated"
+              break
+            fi
+            echo "⏳ waiting for ESO sync ($i/30)"
+            sleep 5
+          done
+
+      # ----- Helm apply real -----
+      - name: Helm upgrade --install
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          helm upgrade --install parkir-pintar deploy/helm/parkir-pintar \
+            --namespace parkir --create-namespace \
+            -f deploy/helm/parkir-pintar/values.yaml \
+            -f deploy/helm/parkir-pintar/values.eks.yaml \
+            --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/parkir-pintar \
+            --set global.imageTag=${{ steps.tag.outputs.tag }} \
+            --set global.eks.accountId=${{ steps.account.outputs.id }} \
+            --set global.env=${{ github.event.inputs.environment }} \
+            --atomic --timeout 10m
+
+      # ----- Wait rollout per service -----
+      - name: Wait rollout
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          if [ "${{ github.event.inputs.service_filter }}" = "all" ]; then
+            SERVICES="gateway reservation billing payment notification"
+          else
+            SERVICES=$(echo "${{ github.event.inputs.service_filter }}" | tr ',' ' ')
+          fi
+          for svc in $SERVICES; do
+            echo "==> Wait rollout: $svc"
+            kubectl rollout status deployment/$svc -n parkir --timeout=5m
+          done
+
+      # ----- Smoke test via ALB DNS -----
+      - name: Get ALB DNS
+        if: github.event.inputs.dry_run == 'false'
+        id: alb
+        run: |
+          ALB=$(kubectl get ingress -n parkir -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' || true)
+          echo "dns=$ALB" >> $GITHUB_OUTPUT
+          echo "ALB DNS: $ALB"
+
+      - name: Smoke test gateway
+        if: github.event.inputs.dry_run == 'false' && steps.alb.outputs.dns != ''
+        run: |
+          ALB="${{ steps.alb.outputs.dns }}"
+          echo "Smoke testing https://$ALB/healthz"
+          for i in 1 2 3 4 5 6; do
+            if curl -skf "https://$ALB/healthz"; then
+              echo "✅ Healthy"
+              exit 0
+            fi
+            echo "⏳ retry $i/6"
+            sleep 15
+          done
+          echo "❌ Smoke test failed — investigating pod logs"
+          kubectl get pods -n parkir
+          kubectl logs -n parkir -l app.kubernetes.io/name=gateway --tail=50
+          exit 1
+
+      # ----- Notification -----
+      - name: Slack notification
+        if: always() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          STATUS="${{ job.status }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"EKS deploy ${{ github.event.inputs.environment }} → $STATUS (image=${{ steps.tag.outputs.tag }})\"}" \
+            "$SLACK_WEBHOOK_URL" || true

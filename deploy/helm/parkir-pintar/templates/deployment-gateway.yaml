@@ -1,0 +1,90 @@
+{{- if .Values.services.gateway.enabled -}}
+{{- $name := "gateway" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "parkir.labels" (merge (dict "name" $name) .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.services.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/part-of: parkir-pintar
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "parkir.image" (merge (dict "name" $name) .) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.services.gateway.port }}
+          env:
+            {{- include "parkir.commonEnv" . | nindent 12 }}
+            - name: GATEWAY_HTTP_PORT
+              value: ":{{ .Values.services.gateway.port }}"
+            - name: RESERVATION_HTTP_URL
+              value: "http://reservation:{{ .Values.services.reservation.httpPort }}"
+            - name: BILLING_HTTP_URL
+              value: "http://billing:{{ .Values.services.billing.httpPort }}"
+            - name: PAYMENT_HTTP_URL
+              value: "http://payment:{{ .Values.services.payment.httpPort }}"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: parkir-secrets
+                  key: jwt-secret
+                  optional: true
+          resources:
+            {{- toYaml .Values.services.gateway.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- if .Values.services.gateway.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ .Values.services.gateway.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.services.gateway.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.services.gateway.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}

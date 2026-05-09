@@ -1,0 +1,19 @@
+{{- if eq .Values.ingress.className "openshift" }}
+# OpenShift Route (alternative to Ingress).
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: parkir-gateway
+spec:
+  host: {{ .Values.global.domain }}
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  to:
+    kind: Service
+    name: gateway
+    weight: 100
+  wildcardPolicy: None
+{{- end }}
