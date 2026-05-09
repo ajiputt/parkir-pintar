@@ -2,8 +2,9 @@
 FROM golang:1.24-alpine AS build
 WORKDIR /src
 
-# Copy go workspace files first for better cache.
-COPY go.work go.work.sum* ./
+# Build dengan module mode (no workspace) supaya Docker image self-contained
+# tanpa harus copy semua service. Replace directives di services/X/go.mod
+# (../../pkg, ../../proto) handle dependency resolution.
 COPY pkg ./pkg
 COPY proto ./proto
 COPY services/reservation ./services/reservation

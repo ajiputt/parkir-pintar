@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 FROM golang:1.24-alpine AS build
 WORKDIR /src
-COPY go.work go.work.sum* ./
+# Module mode (no go.work) — replace directives di go.mod handle pkg + proto.
 COPY pkg ./pkg
 COPY proto ./proto
 COPY services/payment ./services/payment
