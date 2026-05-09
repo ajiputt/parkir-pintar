@@ -178,7 +178,6 @@ func TestReservationToBillingFlow(t *testing.T) {
 	// ----- Test 5: Billing event log (event sourcing dedup)
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO billing.events_log (source_event_id, aggregate_type, aggregate_id, event_type, payload, occurred_at)
-		VALUES ('evt-1', 'reservation', $1, 'reservation.confirmed.v1', '{}', NOW());
 		VALUES ('evt-1', 'reservation', $1, 'reservation.confirmed.v1', '{}', NOW())
 	`, resID.String())
 	require.NoError(t, err)
