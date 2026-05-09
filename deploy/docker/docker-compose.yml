@@ -97,6 +97,9 @@ services:
       RESERVATION_HTTP_ADDR: ":9191"
       RESERVATION_HOLD_DURATION: 1h
       RESERVATION_EXPIRY_SCAN_INTERVAL: 30s
+      # Cross-service gRPC: cek overdue invoice per driver sebelum book baru
+      # (ADR-0014 driver blocking). Empty = NoopChecker (graceful degradation).
+      BILLING_GRPC_ADDR_DIAL: billing:9092
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       postgres: { condition: service_healthy }
@@ -104,11 +107,10 @@ services:
       nats:     { condition: service_healthy }
       seed:     { condition: service_completed_successfully }
     ports: ["9091:9091", "9191:9191"]
-    healthcheck:
-      test: ["CMD", "/reservation", "--healthcheck"]   # placeholder; gunakan curl di prod
-      interval: 10s
-      timeout: 3s
-      retries: 5
+    # Healthcheck di-skip karena distroless image gak punya /bin/sh atau wget.
+    # Downstream service pakai 'condition: service_started' (bukan healthy)
+    # jadi gak block dependency chain. Health probe via /healthz endpoint
+    # tetap available di port 9191 untuk K8s/external monitor.
 
   billing:
     build:
@@ -137,12 +139,18 @@ services:
       LOG_LEVEL: info
       DB_URL: "postgres://parkir:parkir_dev_only@postgres:5432/parkirpintar?sslmode=disable&search_path=payment"
       NATS_URL: nats://nats:4222
+      NATS_STREAM: PARKIRPINTAR
+      PAYMENT_GRPC_ADDR: ":9093"
       PAYMENT_HTTP_ADDR: ":9193"
       PAYMENT_MOCK_MODE: ${PAYMENT_MOCK_MODE:-true}
       MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-SB-Mid-server-FAKE}
       MIDTRANS_BASE_URL: https://api.sandbox.midtrans.com
-      BILLING_HTTP_URL: http://billing:9192
+      # Billing client via gRPC (bukan HTTP — service-to-service ADR-0010).
+      # Default empty = stub mode; set ke billing:9092 untuk live gRPC.
+      BILLING_GRPC_ADDR: billing:9092
       BILLING_STUB: "false"
+      # Auto-pay subscriber: handle billing.invoice.issued.v1 untuk AUTO mode.
+      PAYMENT_AUTO_PAY: ${PAYMENT_AUTO_PAY:-false}
     depends_on:
       postgres: { condition: service_healthy }
       nats:     { condition: service_healthy }
@@ -171,15 +179,27 @@ services:
     environment:
       APP_ENV: dev
       GATEWAY_HTTP_PORT: ":8080"
-      JWT_SECRET: dev-only-secret
-      RESERVATION_HTTP_URL: http://reservation:9191
-      BILLING_HTTP_URL: http://billing:9192
+      # Backend gRPC dial targets (internal service name + gRPC port).
+      # Gateway translate REST → gRPC, BUKAN HTTP → HTTP. Lihat ADR-0010.
+      RESERVATION_GRPC_ADDR_DIAL: reservation:9091
+      BILLING_GRPC_ADDR_DIAL:     billing:9092
+      PAYMENT_GRPC_ADDR_DIAL:     payment:9093
+      # Webhook proxy: Midtrans push → forward verbatim ke payment HTTP.
       PAYMENT_HTTP_URL: http://payment:9193
+      # Rate limit (Redis-based distributed token bucket — ADR-0015).
+      GATEWAY_REDIS_ADDR: redis:6379
+      # Auth (HS256 JWT — ADR-0016). Min 32 chars.
+      JWT_SECRET: dev-only-secret-change-in-production-please-32chars
+      JWT_ISSUER: parkirpintar
+      JWT_TTL: 1h
+      # Demo: passthrough kalau token kosong (untuk Postman testing tanpa setup).
+      AUTH_PASSTHROUGH_NO_TOKEN: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       reservation: { condition: service_started }
       billing:     { condition: service_started }
       payment:     { condition: service_started }
+      redis:       { condition: service_healthy }
     ports: ["8080:8080"]
 
   # ----- Observability (profile: observability) ------------------------------
