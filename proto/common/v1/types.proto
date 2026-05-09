@@ -4,8 +4,6 @@ package common.v1;
 
 option go_package = "github.com/ajiperdana/parkir-pintar/proto/gen/common/v1;commonv1";
 
-import "google/protobuf/timestamp.proto";
-
 // Money — value object Rupiah, integer (no float).
 message Money {
   // Amount in IDR (smallest unit = 1 IDR; tidak ada subdivisi).

@@ -14,6 +14,16 @@ lint:
     # Zero values tetap pakai prefix (VEHICLE_TYPE_UNSPECIFIED dst) karena proto3
     # enum values share package scope.
     - ENUM_VALUE_PREFIX
+    # RPC_REQUEST_RESPONSE_UNIQUE di-except: kita reuse domain message
+    # (Invoice, Reservation, Payment) sebagai response untuk multiple RPC.
+    # Buf default expect dedicated GetInvoiceResponse/MarkPaidResponse/etc, tapi
+    # ini menambah noise tanpa value (response single-field wrapper). Trade-off
+    # diambil untuk JSON ergonomics + thinner proto surface area.
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    # RPC_RESPONSE_STANDARD_NAME di-except: alasan sama. Domain message sebagai
+    # response langsung lebih natural untuk grpc-gateway REST translation
+    # (response = resource shape, bukan envelope wrapper).
+    - RPC_RESPONSE_STANDARD_NAME
 breaking:
   use:
     - FILE

@@ -122,10 +122,14 @@ func TestCalculateSession(t *testing.T) {
 
 func TestCalculateSession_InvalidWindow(t *testing.T) {
 	e := newEngine(t)
-	_, err := e.CalculateSession(time.Now(), time.Now())
-	require.Error(t, err)
-	_, err = e.CalculateSession(time.Now(), time.Now().Add(-1*time.Hour))
-	require.Error(t, err)
+	// Snapshot time once. `time.Now()` consecutive di high-resolution clock
+	// (Linux GHA runner) bisa return slightly-later second value, bikin
+	// checkOut.After(checkIn) jadi true secara accidental.
+	n := time.Now()
+	_, err := e.CalculateSession(n, n)
+	require.Error(t, err, "checkout == checkin should error")
+	_, err = e.CalculateSession(n, n.Add(-1*time.Hour))
+	require.Error(t, err, "checkout < checkin should error")
 }
 
 // Skenario integrasi: full invoice = booking + session.

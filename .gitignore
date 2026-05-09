@@ -99,6 +99,7 @@ notes-*.txt
 TODO.md
 TODO-*.md
 SCRATCH.md
+ROADMAP.md
 
 # Kalau pakai `gh issue/PR template draft`:
 .github/drafts/
