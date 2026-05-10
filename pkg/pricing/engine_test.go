@@ -112,6 +112,8 @@ func TestCalculateSession(t *testing.T) {
 				case LineOvernight:
 					overnightSeen = true
 					assert.Equal(t, int64(20_000), l.Amount.Amount())
+				default:
+					// Booking + no-show kinds tidak dihasilkan oleh CalculateSession.
 				}
 			}
 			assert.Equal(t, c.wantHourly, hourly, "hourly amount")

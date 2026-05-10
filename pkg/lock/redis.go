@@ -2,6 +2,7 @@ package lock
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/go-redsync/redsync/v4"
@@ -55,7 +56,8 @@ func errIsTaken(err error) bool {
 		return false
 	}
 	// redsync mengembalikan ErrFailed kalau gagal dapat (sudah dipegang).
-	return err == redsync.ErrFailed
+	// Pakai errors.Is untuk handle wrapped errors correctly.
+	return errors.Is(err, redsync.ErrFailed)
 }
 
 func genValue() (string, error) {

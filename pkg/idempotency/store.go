@@ -120,10 +120,9 @@ func Wrap(
 		_ = store.Fail(ctx, fullKey)
 		return Result{}, fnErr
 	}
-	if err := store.Complete(ctx, fullKey, status, body); err != nil {
-		// Don't fail the caller — log only (caller's job to log via deferred logger).
-		// Idempotency cache miss next time is acceptable degradation.
-		return Result{FromCache: false, Status: status, Body: body}, nil
-	}
+	// Best-effort cache write. Kalau gagal, idempotency cache miss next time
+	// = acceptable degradation. Caller flow tidak block oleh cache failure.
+	// Explicit discard pakai _= supaya intent clear (gak nilerr false positive).
+	_ = store.Complete(ctx, fullKey, status, body)
 	return Result{FromCache: false, Status: status, Body: body}, nil
 }

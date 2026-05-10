@@ -122,11 +122,11 @@ func (v *Verifier) Verify(token string) (*Claims, error) {
 	// Decode header (sanity check alg).
 	hdrJSON, err := base64.RawURLEncoding.DecodeString(hdrB64)
 	if err != nil {
-		return nil, fmt.Errorf("%w: header b64: %v", ErrTokenInvalid, err)
+		return nil, fmt.Errorf("%w: header b64: %w", ErrTokenInvalid, err)
 	}
 	var hdr header
 	if err := json.Unmarshal(hdrJSON, &hdr); err != nil {
-		return nil, fmt.Errorf("%w: header json: %v", ErrTokenInvalid, err)
+		return nil, fmt.Errorf("%w: header json: %w", ErrTokenInvalid, err)
 	}
 	if hdr.Alg != "HS256" {
 		return nil, fmt.Errorf("%w: unsupported alg %s", ErrTokenInvalid, hdr.Alg)
@@ -135,11 +135,11 @@ func (v *Verifier) Verify(token string) (*Claims, error) {
 	// Decode payload.
 	plJSON, err := base64.RawURLEncoding.DecodeString(plB64)
 	if err != nil {
-		return nil, fmt.Errorf("%w: payload b64: %v", ErrTokenInvalid, err)
+		return nil, fmt.Errorf("%w: payload b64: %w", ErrTokenInvalid, err)
 	}
 	var c Claims
 	if err := json.Unmarshal(plJSON, &c); err != nil {
-		return nil, fmt.Errorf("%w: payload json: %v", ErrTokenInvalid, err)
+		return nil, fmt.Errorf("%w: payload json: %w", ErrTokenInvalid, err)
 	}
 
 	// Check exp.

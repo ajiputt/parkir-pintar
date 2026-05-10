@@ -1,6 +1,6 @@
 run:
   timeout: 5m
-  go: "1.22"
+  go: "1.24"
   tests: true
 
 linters:
@@ -17,7 +17,9 @@ linters:
     - gocyclo
     - goimports
     - gofmt
-    - misspell
+    # misspell disabled: codebase pakai komentar Indonesia ("implementasi",
+    # dll.) yang flagged false positive oleh dictionary English-only.
+    # - misspell
     - bodyclose
     - sqlclosecheck
     - rowserrcheck
@@ -45,8 +47,8 @@ linters-settings:
       - name: package-comments
       - name: exported
         arguments:
-          - "checkPrivateReceivers"
-          - "disableStutteringCheck"
+          - checkPrivateReceivers
+          - disableStutteringCheck
 
 issues:
   exclude-dirs:

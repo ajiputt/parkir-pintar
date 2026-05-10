@@ -149,8 +149,9 @@ func isRetryable(err error) bool {
 	switch st.Code() {
 	case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted, codes.Aborted:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // NewBreaker — convenience factory untuk gobreaker.

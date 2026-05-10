@@ -76,11 +76,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	healthy := true
 
+	parentCtx := r.Context()
 	for _, c := range h.Checks {
 		wg.Add(1)
-		go func(c Check) {
+		go func(parentCtx context.Context, c Check) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(r.Context(), timeout)
+			ctx, cancel := context.WithTimeout(parentCtx, timeout)
 			defer cancel()
 
 			start := time.Now()
@@ -106,7 +107,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					LatencyMS: latency,
 				}
 			}
-		}(c)
+		}(parentCtx, c)
 	}
 	wg.Wait()
 
