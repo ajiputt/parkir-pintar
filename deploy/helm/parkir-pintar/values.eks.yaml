@@ -12,7 +12,10 @@
 global:
   # Switch image registry ke ECR (low-egress dalam same region).
   # Replace <ACCOUNT> dengan AWS account ID actual saat deploy.
-  imageRegistry: <ACCOUNT>.dkr.ecr.ap-southeast-1.amazonaws.com/parkir-pintar
+  # Format: <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/<PREFIX>
+  # Helm chart akan generate image full path:
+  # <ACCOUNT>.dkr.ecr.ap-southeast-3.amazonaws.com/ajipur-parkir-pintar/<service>:<tag>
+  imageRegistry: <ACCOUNT>.dkr.ecr.ap-southeast-3.amazonaws.com/ajipur-parkir-pintar
   imagePullPolicy: IfNotPresent
   imageTag: latest
   env: production
@@ -23,7 +26,7 @@ global:
   eks:
     enabled: true
     accountId: "123456789012"   # ganti dengan AWS account
-    region: ap-southeast-1
+    region: ap-southeast-3
 
 # ---- Per-service IRSA role ARN ----
 # IAM role harus pre-create dulu (lihat docs/deployment/aws-eks-architecture.md §5.3).
@@ -68,7 +71,7 @@ ingress:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:123456789012:certificate/xxx-yyy-zzz
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-3:123456789012:certificate/xxx-yyy-zzz
     alb.ingress.kubernetes.io/healthcheck-path: /healthz
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
@@ -80,7 +83,7 @@ ingress:
 # ---- External dependencies (managed services) ----
 postgres:
   external: true
-  host: parkir-rds.cluster-xxx.ap-southeast-1.rds.amazonaws.com
+  host: parkir-rds.cluster-xxx.ap-southeast-3.rds.amazonaws.com
   port: 5432
   databaseSecret: parkir-secrets    # ESO-synced dari Secrets Manager
   databaseSecretKey: db-url

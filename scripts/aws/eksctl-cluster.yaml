@@ -1,0 +1,130 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+# ============================================================================
+# ParkirPintar — EKS Cluster Definition
+# ============================================================================
+# Reference: docs/architecture/adr/0017-deployment-eks.md
+# Reference: docs/deployment/aws-eks-architecture.md
+#
+# Cluster lifecycle (Skenario A daily):
+#   - Pagi:  .\scripts\aws\wake.ps1     → eksctl create cluster -f eksctl-cluster.yaml
+#   - Sore:  .\scripts\aws\teardown.ps1 → eksctl delete cluster --name parkir-demo
+#
+# Estimasi: 15-20 menit untuk provision, 8-10 menit untuk delete.
+# ============================================================================
+
+metadata:
+  name: parkir-demo
+  region: ap-southeast-3
+  version: "1.30"
+  tags:
+    Project: parkir-pintar
+    Environment: demo
+    ManagedBy: eksctl
+    CostCenter: parkir-pintar-demo
+
+# ---- VPC config ----
+# eksctl auto-create VPC dengan 3-AZ public+private subnet.
+# Untuk demo single-NAT (cost saving). Production: 1 NAT per AZ.
+vpc:
+  cidr: 10.0.0.0/16
+  nat:
+    gateway: Single  # Single | HighlyAvailable | Disable
+  clusterEndpoints:
+    publicAccess:  true   # demo: kubectl dari laptop. Prod: false (VPN/bastion)
+    privateAccess: true
+
+# ---- IAM with OIDC for IRSA ----
+# IRSA = IAM Role for Service Account → pod-level AWS access tanpa long-lived key.
+iam:
+  withOIDC: true
+  serviceAccounts:
+    # AWS Load Balancer Controller — manage ALB dari K8s Ingress
+    - metadata:
+        name: aws-load-balancer-controller
+        namespace: kube-system
+      wellKnownPolicies:
+        awsLoadBalancerController: true
+      roleName: parkir-alb-controller-role
+
+    # External Secrets Operator — sync Secrets Manager → K8s Secret
+    - metadata:
+        name: external-secrets-sa
+        namespace: external-secrets
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+              - secretsmanager:ListSecrets
+            Resource:
+              - "arn:aws:secretsmanager:ap-southeast-3:*:secret:ajipur-parkir-pintar/*"
+      roleName: parkir-external-secrets-role
+
+    # Notification service IRSA — SES SendEmail
+    - metadata:
+        name: notification
+        namespace: parkir
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource: "*"
+      roleName: parkir-notification-role
+
+# ---- Managed Node Group ----
+# EC2 Spot untuk demo (cost 70% lebih murah).
+# Production: mix Spot + On-Demand (mis. 70/30) untuk reliability.
+managedNodeGroups:
+  - name: workers-spot
+    instanceTypes:
+      - t3.medium
+      - t3a.medium  # diversify Spot pool
+    spot: true
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 4
+    volumeSize: 30
+    volumeType: gp3
+    privateNetworking: true  # node di private subnet, egress via NAT
+    iam:
+      withAddonPolicies:
+        imageBuilder: true   # ECR pull
+        autoScaler: true     # Cluster Autoscaler
+        ebs: true            # EBS CSI driver (untuk StatefulSet NATS)
+        cloudWatch: true     # CloudWatch Logs writer
+    labels:
+      role: worker
+      lifecycle: spot
+    tags:
+      Project: parkir-pintar
+      NodeGroup: workers-spot
+
+# ---- Add-ons (AWS managed) ----
+# Plugin core yang AWS manage versinya supaya in-sync dengan cluster version.
+addons:
+  - name: vpc-cni
+    version: latest
+    configurationValues: |-
+      env:
+        ENABLE_PREFIX_DELEGATION: "true"  # support more pod per node
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
+  - name: aws-ebs-csi-driver
+    version: latest
+    wellKnownPolicies:
+      ebsCSIController: true
+
+# ---- CloudWatch Logging (optional, skip untuk demo cost saving) ----
+# Uncomment kalau perlu cluster log aggregation:
+# cloudWatch:
+#   clusterLogging:
+#     enableTypes: ["api", "audit", "authenticator"]

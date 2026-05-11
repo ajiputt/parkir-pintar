@@ -123,10 +123,14 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write   # OIDC ke AWS untuk push ECR
     strategy:
       matrix:
         # search & presence: deferred (ADR-0009)
         service: [gateway, reservation, billing, payment, notification]
+    env:
+      AWS_REGION: ap-southeast-3
+      ECR_PREFIX: ajipur-parkir-pintar
     steps:
       - uses: actions/checkout@v4
       - uses: bufbuild/buf-setup-action@v1
@@ -134,12 +138,26 @@ jobs:
       - name: Generate proto stubs (buf generate)
         run: cd proto && buf generate
       - uses: docker/setup-buildx-action@v3
+
+      # ----- Login GHCR (public visibility) -----
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build & push
+
+      # ----- Login ECR (untuk EKS deploy) -----
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push (GHCR + ECR)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -147,6 +165,9 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
+            ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:latest
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
             ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

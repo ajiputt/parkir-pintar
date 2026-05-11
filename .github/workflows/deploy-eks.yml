@@ -37,7 +37,9 @@ permissions:
   id-token: write   # OIDC ke AWS
 
 env:
-  AWS_REGION: ap-southeast-1
+  AWS_REGION: ap-southeast-3
+  ECR_PREFIX: ajipur-parkir-pintar
+  CLUSTER_NAME: parkir-demo
   HELM_VERSION: v3.15.0
   KUBECTL_VERSION: v1.30.0
 
@@ -81,17 +83,16 @@ jobs:
       # ----- Verify image ada di ECR sebelum deploy -----
       - name: Verify image exists in ECR
         run: |
-          REGISTRY="${{ steps.account.outputs.id }}.dkr.ecr.$AWS_REGION.amazonaws.com"
           MISSING=0
           for svc in gateway reservation billing payment notification; do
             if ! aws ecr describe-images \
-                --repository-name parkir-pintar/$svc \
+                --repository-name $ECR_PREFIX/$svc \
                 --image-ids imageTag=${{ steps.tag.outputs.tag }} \
                 --region $AWS_REGION >/dev/null 2>&1; then
-              echo "❌ Image not found: parkir-pintar/$svc:${{ steps.tag.outputs.tag }}"
+              echo "❌ Image not found: $ECR_PREFIX/$svc:${{ steps.tag.outputs.tag }}"
               MISSING=$((MISSING+1))
             else
-              echo "✅ Found: parkir-pintar/$svc:${{ steps.tag.outputs.tag }}"
+              echo "✅ Found: $ECR_PREFIX/$svc:${{ steps.tag.outputs.tag }}"
             fi
           done
           if [ $MISSING -gt 0 ]; then
@@ -109,10 +110,13 @@ jobs:
           version: ${{ env.KUBECTL_VERSION }}
 
       # ----- Update kubeconfig -----
+      # Note: cluster name fixed ke 'parkir-demo' (match scripts/aws/wake.ps1).
+      # Untuk multi-env (staging/prod), separate cluster bisa pakai naming
+      # pattern: parkir-${{ env }} dan ubah CLUSTER_NAME env atas.
       - name: Configure kubectl ke EKS cluster
         run: |
           aws eks update-kubeconfig \
-            --name parkir-${{ github.event.inputs.environment }} \
+            --name $CLUSTER_NAME \
             --region $AWS_REGION
           kubectl config current-context
           kubectl get nodes
@@ -125,7 +129,7 @@ jobs:
             --namespace parkir --create-namespace \
             -f deploy/helm/parkir-pintar/values.yaml \
             -f deploy/helm/parkir-pintar/values.eks.yaml \
-            --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/parkir-pintar \
+            --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_PREFIX }} \
             --set global.imageTag=${{ steps.tag.outputs.tag }} \
             --set global.eks.accountId=${{ steps.account.outputs.id }} \
             --set global.env=${{ github.event.inputs.environment }} \
@@ -161,7 +165,7 @@ jobs:
             --namespace parkir --create-namespace \
             -f deploy/helm/parkir-pintar/values.yaml \
             -f deploy/helm/parkir-pintar/values.eks.yaml \
-            --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/parkir-pintar \
+            --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_PREFIX }} \
             --set global.imageTag=${{ steps.tag.outputs.tag }} \
             --set global.eks.accountId=${{ steps.account.outputs.id }} \
             --set global.env=${{ github.event.inputs.environment }} \
