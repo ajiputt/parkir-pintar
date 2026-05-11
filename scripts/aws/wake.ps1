@@ -18,13 +18,16 @@
 #   - Helm install addons: 2-3 menit
 # ============================================================================
 
-$ErrorActionPreference = "Stop"
+# Default ErrorActionPreference = "Continue" supaya non-zero exit code dari
+# aws/eksctl (kalau resource gak ada saat check existence) gak hentikan script.
+# Per-step error handling pakai explicit $LASTEXITCODE check.
+$ErrorActionPreference = "Continue"
 
 # ---- Config ----
 $AWS_REGION       = "ap-southeast-3"
-$CLUSTER_NAME     = "parkir-demo"
-$DB_INSTANCE_ID   = "parkir-rds"
-$REDIS_CLUSTER_ID = "parkir-redis"
+$CLUSTER_NAME     = "ajipur-parkir-staging"
+$DB_INSTANCE_ID   = "ajipur-parkir-rds"
+$REDIS_CLUSTER_ID = "ajipur-parkir-redis"
 $SECRET_PREFIX    = "ajipur-parkir-pintar"
 $REPO_ROOT        = (Get-Item $PSScriptRoot).Parent.Parent.FullName
 
@@ -45,13 +48,11 @@ function Write-Warn {
 }
 
 function Test-Tool {
-    param([string]$Name, [string]$VersionFlag = "version")
-    try {
-        $null = & $Name $VersionFlag 2>$null
-        return $true
-    } catch {
-        return $false
-    }
+    param([string]$Name)
+    # Pakai Get-Command instead of run --version, supaya consistent untuk semua tool
+    # (aws pakai --version, eksctl/kubectl/helm pakai version, beda flag).
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    return $null -ne $cmd
 }
 
 # ============================================================================
@@ -87,13 +88,17 @@ if ($configured_region -ne $AWS_REGION) {
 # ============================================================================
 Write-Step "Provision EKS cluster '$CLUSTER_NAME' (estimasi 12-15 menit)"
 
-$existing = eksctl get cluster --name $CLUSTER_NAME --region $AWS_REGION 2>$null
-if ($existing) {
+# Check existence dengan suppress stderr + cek $LASTEXITCODE
+eksctl get cluster --name $CLUSTER_NAME --region $AWS_REGION 2>$null | Out-Null
+$clusterExists = ($LASTEXITCODE -eq 0)
+
+if ($clusterExists) {
     Write-Warn "Cluster '$CLUSTER_NAME' sudah ada. Skip create."
 } else {
+    Write-Host "Cluster belum ada. Creating..."
     eksctl create cluster -f "$PSScriptRoot\eksctl-cluster.yaml"
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "eksctl create cluster failed"
+        Write-Host "[FAIL] eksctl create cluster failed (exit $LASTEXITCODE)" -ForegroundColor Red
         exit 1
     }
     Write-Ok "EKS cluster created"
@@ -140,7 +145,7 @@ if (-not $DB_PASSWORD) {
 
 # Create DB subnet group
 aws rds create-db-subnet-group `
-    --db-subnet-group-name "parkir-rds-subnet" `
+    --db-subnet-group-name "ajipur-parkir-rds-subnet" `
     --db-subnet-group-description "ParkirPintar RDS subnet group" `
     --subnet-ids $PRIVATE_SUBNETS_LIST `
     --region $AWS_REGION `
@@ -148,7 +153,7 @@ aws rds create-db-subnet-group `
 
 # Create RDS security group, allow from EKS node SG
 $RDS_SG = aws ec2 create-security-group `
-    --group-name "parkir-rds-sg" `
+    --group-name "ajipur-parkir-rds-sg" `
     --description "Allow Postgres from EKS nodes" `
     --vpc-id $VPC_ID `
     --region $AWS_REGION `
@@ -162,7 +167,7 @@ if ($RDS_SG) {
         --region $AWS_REGION | Out-Null
     Write-Ok "RDS SG created: $RDS_SG"
 } else {
-    $RDS_SG = aws ec2 describe-security-groups --filters "Name=group-name,Values=parkir-rds-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text
+    $RDS_SG = aws ec2 describe-security-groups --filters "Name=group-name,Values=ajipur-parkir-rds-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text
     Write-Warn "RDS SG sudah ada, pakai existing: $RDS_SG"
 }
 
@@ -182,7 +187,7 @@ if ($LASTEXITCODE -eq 0) {
         --storage-type gp3 `
         --db-name parkirpintar `
         --vpc-security-group-ids $RDS_SG `
-        --db-subnet-group-name "parkir-rds-subnet" `
+        --db-subnet-group-name "ajipur-parkir-rds-subnet" `
         --backup-retention-period 0 `
         --no-publicly-accessible `
         --no-multi-az `
@@ -199,14 +204,14 @@ Write-Step "Provision ElastiCache Redis '$REDIS_CLUSTER_ID'"
 
 # Cache subnet group
 aws elasticache create-cache-subnet-group `
-    --cache-subnet-group-name "parkir-redis-subnet" `
+    --cache-subnet-group-name "ajipur-parkir-redis-subnet" `
     --cache-subnet-group-description "ParkirPintar Redis subnet group" `
     --subnet-ids $PRIVATE_SUBNETS_LIST `
     --region $AWS_REGION 2>$null | Out-Null
 
 # Redis security group
 $REDIS_SG = aws ec2 create-security-group `
-    --group-name "parkir-redis-sg" `
+    --group-name "ajipur-parkir-redis-sg" `
     --description "Allow Redis from EKS nodes" `
     --vpc-id $VPC_ID `
     --region $AWS_REGION `
@@ -219,19 +224,21 @@ if ($REDIS_SG) {
         --source-group $NODE_SG `
         --region $AWS_REGION | Out-Null
 } else {
-    $REDIS_SG = aws ec2 describe-security-groups --filters "Name=group-name,Values=parkir-redis-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text
+    $REDIS_SG = aws ec2 describe-security-groups --filters "Name=group-name,Values=ajipur-parkir-redis-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text
 }
 
 aws elasticache describe-cache-clusters --cache-cluster-id $REDIS_CLUSTER_ID --region $AWS_REGION 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Warn "Redis '$REDIS_CLUSTER_ID' sudah ada. Skip create."
 } else {
+    # Note: cache.t4g.* (Graviton) gak available di ap-southeast-3 Jakarta.
+    # Pakai cache.t3.micro (Intel-based, compatible cross-region).
     aws elasticache create-cache-cluster `
         --cache-cluster-id $REDIS_CLUSTER_ID `
         --engine redis `
-        --cache-node-type cache.t4g.micro `
+        --cache-node-type cache.t3.micro `
         --num-cache-nodes 1 `
-        --cache-subnet-group-name "parkir-redis-subnet" `
+        --cache-subnet-group-name "ajipur-parkir-redis-subnet" `
         --security-group-ids $REDIS_SG `
         --region $AWS_REGION `
         --tags "Key=Project,Value=parkir-pintar" | Out-Null
@@ -325,63 +332,77 @@ helm upgrade --install nats nats/nats `
 Write-Ok "NATS installed"
 
 # ============================================================================
-# 11. Apply External Secret manifest + parkir namespace
+# 11. Wait ESO CRDs ready, lalu Apply External Secret manifest
 # ============================================================================
-Write-Step "Apply ExternalSecret manifest"
+Write-Step "Wait ESO CRDs registered + apply ExternalSecret"
 
 kubectl create namespace parkir 2>$null
-kubectl apply -f "$REPO_ROOT\deploy\k8s\eks\external-secret.yaml"
 
-# Wait Secret ter-populate (ESO sync)
-Write-Host "Waiting ESO sync (max 60 detik)..."
+# Wait CRDs registered di K8s API server (ESO baru saja install, butuh ~10-20 detik)
+Write-Host "Waiting ExternalSecret CRDs ready (max 60 detik)..."
+$crdReady = $false
 for ($i = 0; $i -lt 30; $i++) {
-    $secret = kubectl get secret parkir-secrets -n parkir 2>$null
-    if ($secret) {
-        Write-Ok "K8s Secret 'parkir-secrets' populated"
+    kubectl get crd clustersecretstores.external-secrets.io 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        $crdReady = $true
+        Write-Ok "CRDs registered"
         break
     }
     Start-Sleep -Seconds 2
 }
 
-# ============================================================================
-# 12. Run DB migration (via temp pod)
-# ============================================================================
-Write-Step "Apply DB migration"
+if (-not $crdReady) {
+    Write-Warn "ESO CRDs not ready after 60s. Skip ExternalSecret apply. Run manually nanti:"
+    Write-Warn "  kubectl apply -f deploy/k8s/eks/external-secret.yaml"
+} else {
+    kubectl apply -f "$REPO_ROOT\deploy\k8s\eks\external-secret.yaml"
 
-# Run migrate dengan ephemeral pod
-kubectl run migrate --rm -i --restart=Never `
-    --image=migrate/migrate:v4.17.1 `
-    --namespace parkir `
-    --env="DB_URL=$DB_URL" `
-    --command -- /bin/sh -c "
-        echo '==> migrate reservation' && migrate -path /tmp/migrations/reservation -database `$DB_URL up &&
-        echo '==> migrate billing' && migrate -path /tmp/migrations/billing -database `$DB_URL up &&
-        echo '==> migrate payment' && migrate -path /tmp/migrations/payment -database `$DB_URL up &&
-        echo '==> migrate notification' && migrate -path /tmp/migrations/notification -database `$DB_URL up
-    "
-# Note: kubectl exec migration approach disederhanakan — actual run via init container atau CI job step lebih baik.
-# Untuk demo, manual psql apply juga work.
+    # Wait Secret ter-populate (ESO sync)
+    Write-Host "Waiting ESO sync ke K8s Secret (max 60 detik)..."
+    for ($i = 0; $i -lt 30; $i++) {
+        kubectl get secret parkir-secrets -n parkir 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "K8s Secret 'parkir-secrets' populated"
+            break
+        }
+        Start-Sleep -Seconds 2
+    }
+}
+
+# ============================================================================
+# 12. DB migration — handled by Helm pre-install/pre-upgrade Job
+# ============================================================================
+Write-Step "DB migration"
+
+Write-Ok "Migration auto-handled via Helm pre-install/pre-upgrade hook."
+Write-Host "  - ConfigMap (templates/migration-configmap.yaml) bundle SQL files"
+Write-Host "  - Job (templates/migration-job.yaml) jalan SEBELUM app pods"
+Write-Host "  - migrate CLI loop ke 4 schema (reservation, billing, payment, notification)"
+Write-Host "  - Kalau Job fail, Helm rollback otomatis (atomic install/upgrade)"
+Write-Host ""
+Write-Host "  Trigger via: GitHub Actions 'Deploy to AWS EKS' workflow." -ForegroundColor Yellow
 
 # ============================================================================
 # Summary
 # ============================================================================
 Write-Step "WAKE COMPLETE"
-Write-Host @"
-
-╔════════════════════════════════════════════════════════════╗
-║  AWS Infrastructure Ready                                  ║
-╠════════════════════════════════════════════════════════════╣
-║  EKS Cluster:    $CLUSTER_NAME (region $AWS_REGION)
-║  VPC:            $VPC_ID
-║  RDS Postgres:   $DB_HOST
-║  Redis:          $REDIS_HOST
-║  NATS:           nats.parkir-system.svc.cluster.local:4222
-║                                                            ║
-║  Next step:                                                ║
-║  → Trigger 'Deploy to AWS EKS' workflow di GitHub Actions  ║
-║                                                            ║
-║  Don't forget:                                             ║
-║  → Sore: jalanin .\scripts\aws\teardown.ps1 untuk cleanup  ║
-╚════════════════════════════════════════════════════════════╝
-
-"@ -ForegroundColor Green
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  AWS Infrastructure Ready" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  EKS Cluster:    $CLUSTER_NAME (region $AWS_REGION)"
+Write-Host "  VPC:            $VPC_ID"
+Write-Host "  RDS Postgres:   $DB_HOST"
+Write-Host "  Redis:          $REDIS_HOST"
+Write-Host "  NATS:           nats.parkir-system.svc.cluster.local:4222"
+Write-Host ""
+Write-Host "  Next steps:" -ForegroundColor Yellow
+Write-Host "  1. Sync migrations ke chart dir (kalau ada perubahan):"
+Write-Host "     cp -r migrations/* deploy/helm/parkir-pintar/migrations/"
+Write-Host "  2. Trigger 'Deploy to AWS EKS' workflow di GitHub Actions"
+Write-Host "     (Helm pre-install Job akan auto-migrate 4 schema)"
+Write-Host ""
+Write-Host "  Don't forget:" -ForegroundColor Red
+Write-Host "  -> Sore: jalanin .\scripts\aws\teardown.ps1 untuk cleanup"
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host ""

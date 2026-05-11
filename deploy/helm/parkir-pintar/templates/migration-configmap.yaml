@@ -1,0 +1,38 @@
+{{- /*
+ConfigMap dengan migration SQL files, di-mount oleh migration Job.
+
+Pre-install/pre-upgrade hook supaya di-create SEBELUM migration Job.
+Hook-weight -10 supaya prioritas tertinggi (ConfigMap dulu, lalu Job).
+
+Folder structure (mirror dari root migrations/):
+  reservation/001_init.up.sql, 001_init.down.sql, 002_*.up.sql, dst.
+  billing/001_init.up.sql, dst.
+  payment/001_init.up.sql
+  notification/001_init.up.sql
+
+NOTE: Migrations files duplicated dari root migrations/ ke
+deploy/helm/parkir-pintar/migrations/ supaya Helm .Files.Glob bisa baca.
+Sync via: cp -r migrations/* deploy/helm/parkir-pintar/migrations/
+Atau jalanin `make helm-sync-migrations` (kalau Makefile target ada).
+*/}}
+{{- if .Values.migration.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: parkir-migrations
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: parkir-migrations
+    app.kubernetes.io/part-of: parkir-pintar
+    app.kubernetes.io/managed-by: helm
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+data:
+{{- range $path, $_ := .Files.Glob "migrations/**/*.sql" }}
+  # Encode path as filename: schema--filename.sql (mis. reservation--001_init.up.sql)
+  {{ regexReplaceAll "migrations/" $path "" | replace "/" "--" }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+{{- end }}

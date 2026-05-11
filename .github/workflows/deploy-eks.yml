@@ -14,9 +14,9 @@ on:
       environment:
         description: 'Target environment'
         required: true
-        default: 'demo'
+        default: 'staging'
         type: choice
-        options: [demo, staging, prod]
+        options: [staging, prod]
       image_tag:
         description: 'Image tag (default: short SHA dari current commit di main)'
         required: false
@@ -39,7 +39,7 @@ permissions:
 env:
   AWS_REGION: ap-southeast-3
   ECR_PREFIX: ajipur-parkir-pintar
-  CLUSTER_NAME: parkir-demo
+  CLUSTER_NAME: ajipur-parkir-staging
   HELM_VERSION: v3.15.0
   KUBECTL_VERSION: v1.30.0
 
@@ -120,6 +120,17 @@ jobs:
             --region $AWS_REGION
           kubectl config current-context
           kubectl get nodes
+
+      # ----- Sync migrations dari root ke chart dir -----
+      # Helm .Files.Glob hanya bisa read file di dalam chart folder.
+      # Source of truth: root migrations/, chart dir di-sync di build time.
+      - name: Sync migrations ke Helm chart dir
+        run: |
+          rm -rf deploy/helm/parkir-pintar/migrations
+          mkdir -p deploy/helm/parkir-pintar/migrations
+          cp -r migrations/* deploy/helm/parkir-pintar/migrations/
+          echo "==> Migrations synced:"
+          find deploy/helm/parkir-pintar/migrations -name '*.sql' | sort
 
       # ----- Helm dry-run (preview) -----
       - name: Helm dry-run preview

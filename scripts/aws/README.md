@@ -121,7 +121,7 @@ kubectl delete ingress --all -n parkir
 kubectl delete service --field-selector spec.type=LoadBalancer --all-namespaces
 
 # Lalu retry
-eksctl delete cluster --name parkir-demo --region ap-southeast-3 --wait
+eksctl delete cluster --name ajipur-parkir-staging --region ap-southeast-3 --wait
 ```
 
 ### Verify zero cost
@@ -163,7 +163,7 @@ Check format: `postgres://parkir:PASSWORD@HOST:5432/parkirpintar?sslmode=require
 ### kubectl gak bisa connect ke cluster
 
 ```powershell
-aws eks update-kubeconfig --name parkir-demo --region ap-southeast-3
+aws eks update-kubeconfig --name ajipur-parkir-staging --region ap-southeast-3
 kubectl get nodes
 ```
 

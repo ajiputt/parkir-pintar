@@ -125,3 +125,10 @@ securityContext:
 
 networkPolicy:
   enabled: true
+
+# ---- Migration Job (pre-install/pre-upgrade hook) ----
+# Helm akan jalanin migration Job SEBELUM app pods.
+# Mounts ConfigMap (generated dari migrations/**/*.sql) + run migrate CLI.
+# Set false kalau mau handle migration manual / external (mis. CI step).
+migration:
+  enabled: true

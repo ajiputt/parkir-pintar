@@ -9,20 +9,20 @@ kind: ClusterConfig
 #
 # Cluster lifecycle (Skenario A daily):
 #   - Pagi:  .\scripts\aws\wake.ps1     → eksctl create cluster -f eksctl-cluster.yaml
-#   - Sore:  .\scripts\aws\teardown.ps1 → eksctl delete cluster --name parkir-demo
+#   - Sore:  .\scripts\aws\teardown.ps1 → eksctl delete cluster --name ajipur-parkir-staging
 #
 # Estimasi: 15-20 menit untuk provision, 8-10 menit untuk delete.
 # ============================================================================
 
 metadata:
-  name: parkir-demo
+  name: ajipur-parkir-staging
   region: ap-southeast-3
   version: "1.30"
   tags:
     Project: parkir-pintar
-    Environment: demo
+    Environment: staging
     ManagedBy: eksctl
-    CostCenter: parkir-pintar-demo
+    CostCenter: ajipur-parkir-pintar-staging
 
 # ---- VPC config ----
 # eksctl auto-create VPC dengan 3-AZ public+private subnet.
@@ -46,7 +46,7 @@ iam:
         namespace: kube-system
       wellKnownPolicies:
         awsLoadBalancerController: true
-      roleName: parkir-alb-controller-role
+      roleName: ajipur-parkir-alb-controller-role
 
     # External Secrets Operator — sync Secrets Manager → K8s Secret
     - metadata:
@@ -62,7 +62,7 @@ iam:
               - secretsmanager:ListSecrets
             Resource:
               - "arn:aws:secretsmanager:ap-southeast-3:*:secret:ajipur-parkir-pintar/*"
-      roleName: parkir-external-secrets-role
+      roleName: ajipur-parkir-external-secrets-role
 
     # Notification service IRSA — SES SendEmail
     - metadata:
@@ -76,7 +76,7 @@ iam:
               - ses:SendEmail
               - ses:SendRawEmail
             Resource: "*"
-      roleName: parkir-notification-role
+      roleName: ajipur-parkir-notification-role
 
 # ---- Managed Node Group ----
 # EC2 Spot untuk demo (cost 70% lebih murah).
@@ -84,8 +84,12 @@ iam:
 managedNodeGroups:
   - name: workers-spot
     instanceTypes:
+      # Diversify Spot pool untuk reduce interruption risk.
+      # Hanya pakai instance type yang available di ap-southeast-3 Jakarta:
+      # t3a series gak ada di Jakarta (cuma t3 + m5/m6i).
       - t3.medium
-      - t3a.medium  # diversify Spot pool
+      - m5.large
+      - m6i.large
     spot: true
     desiredCapacity: 2
     minSize: 1

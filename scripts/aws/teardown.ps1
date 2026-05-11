@@ -22,9 +22,9 @@ $ErrorActionPreference = "Continue"  # lanjut walau ada step yang gagal (best-ef
 
 # ---- Config (must match wake.ps1) ----
 $AWS_REGION       = "ap-southeast-3"
-$CLUSTER_NAME     = "parkir-demo"
-$DB_INSTANCE_ID   = "parkir-rds"
-$REDIS_CLUSTER_ID = "parkir-redis"
+$CLUSTER_NAME     = "ajipur-parkir-staging"
+$DB_INSTANCE_ID   = "ajipur-parkir-rds"
+$REDIS_CLUSTER_ID = "ajipur-parkir-redis"
 
 function Write-Step {
     param([string]$Message)
@@ -44,22 +44,20 @@ function Write-Warn {
 # ============================================================================
 # Konfirmasi (safety gate)
 # ============================================================================
-Write-Host @"
-
-╔════════════════════════════════════════════════════════════╗
-║  TEARDOWN ParkirPintar Infrastructure                      ║
-╠════════════════════════════════════════════════════════════╣
-║  Akan DELETE:                                              ║
-║   - EKS cluster '$CLUSTER_NAME'
-║   - RDS Postgres '$DB_INSTANCE_ID' (data hilang)
-║   - ElastiCache Redis '$REDIS_CLUSTER_ID'
-║   - VPC + subnet + NAT (auto via eksctl)                   ║
-║                                                            ║
-║  TIDAK di-delete (persist):                                ║
-║   - IAM Role, ECR repos, Secrets Manager                   ║
-╚════════════════════════════════════════════════════════════╝
-
-"@ -ForegroundColor Yellow
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host "  TEARDOWN ParkirPintar Infrastructure" -ForegroundColor Yellow
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host "  Akan DELETE:"
+Write-Host "   - EKS cluster '$CLUSTER_NAME'"
+Write-Host "   - RDS Postgres '$DB_INSTANCE_ID' (data hilang)"
+Write-Host "   - ElastiCache Redis '$REDIS_CLUSTER_ID'"
+Write-Host "   - VPC + subnet + NAT (auto via eksctl)"
+Write-Host ""
+Write-Host "  TIDAK di-delete (persist):"
+Write-Host "   - IAM Role, ECR repos, Secrets Manager"
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host ""
 
 $confirm = Read-Host "Lanjut delete? Ketik 'yes' untuk confirm"
 if ($confirm -ne "yes") {
@@ -137,17 +135,17 @@ Write-Ok "Redis deleted"
 # ============================================================================
 Write-Step "Delete RDS/Redis subnet groups + SG"
 
-aws rds delete-db-subnet-group --db-subnet-group-name "parkir-rds-subnet" --region $AWS_REGION 2>$null
-aws elasticache delete-cache-subnet-group --cache-subnet-group-name "parkir-redis-subnet" --region $AWS_REGION 2>$null
+aws rds delete-db-subnet-group --db-subnet-group-name "ajipur-parkir-rds-subnet" --region $AWS_REGION 2>$null
+aws elasticache delete-cache-subnet-group --cache-subnet-group-name "ajipur-parkir-redis-subnet" --region $AWS_REGION 2>$null
 
 # Delete custom SG (yang dibuat di wake.ps1)
-$rds_sg = aws ec2 describe-security-groups --filters "Name=group-name,Values=parkir-rds-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text 2>$null
+$rds_sg = aws ec2 describe-security-groups --filters "Name=group-name,Values=ajipur-parkir-rds-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text 2>$null
 if ($rds_sg -and $rds_sg -ne "None") {
     aws ec2 delete-security-group --group-id $rds_sg --region $AWS_REGION 2>$null
     Write-Ok "RDS SG deleted: $rds_sg"
 }
 
-$redis_sg = aws ec2 describe-security-groups --filters "Name=group-name,Values=parkir-redis-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text 2>$null
+$redis_sg = aws ec2 describe-security-groups --filters "Name=group-name,Values=ajipur-parkir-redis-sg" --region $AWS_REGION --query "SecurityGroups[0].GroupId" --output text 2>$null
 if ($redis_sg -and $redis_sg -ne "None") {
     aws ec2 delete-security-group --group-id $redis_sg --region $AWS_REGION 2>$null
     Write-Ok "Redis SG deleted: $redis_sg"
@@ -181,25 +179,24 @@ Write-Ok "db-url reset (akan auto-update next wake)"
 # Summary
 # ============================================================================
 Write-Step "TEARDOWN COMPLETE"
-Write-Host @"
-
-╔════════════════════════════════════════════════════════════╗
-║  AWS Resources Deleted                                     ║
-╠════════════════════════════════════════════════════════════╣
-║  - EKS cluster + node group: DELETED                       ║
-║  - RDS Postgres:               DELETED                     ║
-║  - ElastiCache Redis:          DELETED                     ║
-║  - VPC + subnet + NAT:         DELETED                     ║
-║                                                            ║
-║  Persist (untuk wake besok):                               ║
-║  - IAM Role, ECR repos, Secrets Manager                    ║
-║                                                            ║
-║  Cost stop. Bisa wake lagi besok pagi via:                 ║
-║   .\scripts\aws\wake.ps1                                   ║
-╚════════════════════════════════════════════════════════════╝
-
-VERIFY MANUAL (recommended):
-  aws ec2 describe-instances --region $AWS_REGION --query 'Reservations[].Instances[?State.Name==``running``].InstanceId'
-  → Output kosong = no instance running = 100% clean
-
-"@ -ForegroundColor Green
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  AWS Resources Deleted" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  - EKS cluster + node group: DELETED"
+Write-Host "  - RDS Postgres:               DELETED"
+Write-Host "  - ElastiCache Redis:          DELETED"
+Write-Host "  - VPC + subnet + NAT:         DELETED"
+Write-Host ""
+Write-Host "  Persist (untuk wake besok):"
+Write-Host "  - IAM Role, ECR repos, Secrets Manager"
+Write-Host ""
+Write-Host "  Cost stop. Bisa wake lagi besok pagi via:" -ForegroundColor Yellow
+Write-Host "    .\scripts\aws\wake.ps1"
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "VERIFY MANUAL (recommended):" -ForegroundColor Cyan
+Write-Host "  aws ec2 describe-instances --region $AWS_REGION ``"
+Write-Host "    --query 'Reservations[].Instances[?State.Name==``running``].InstanceId'"
+Write-Host "  -> Output kosong = no instance running = 100% clean"
+Write-Host ""

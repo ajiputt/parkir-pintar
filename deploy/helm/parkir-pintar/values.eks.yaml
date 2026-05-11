@@ -18,7 +18,7 @@ global:
   imageRegistry: <ACCOUNT>.dkr.ecr.ap-southeast-3.amazonaws.com/ajipur-parkir-pintar
   imagePullPolicy: IfNotPresent
   imageTag: latest
-  env: production
+  env: staging
   domain: api.parkirpintar.example.com
   storageClass: gp3
 
@@ -39,19 +39,19 @@ services:
   reservation:
     enabled: true
     replicas: 3
-    iamRoleArn: arn:aws:iam::123456789012:role/parkir-reservation
+    iamRoleArn: arn:aws:iam::123456789012:role/ajipur-parkir-reservation
     holdDuration: "1h"
     expiryScanInterval: "30s"
 
   billing:
     enabled: true
     replicas: 2
-    iamRoleArn: arn:aws:iam::123456789012:role/parkir-billing
+    iamRoleArn: arn:aws:iam::123456789012:role/ajipur-parkir-billing
 
   payment:
     enabled: true
     replicas: 2
-    iamRoleArn: arn:aws:iam::123456789012:role/parkir-payment
+    iamRoleArn: arn:aws:iam::123456789012:role/ajipur-parkir-payment
     midtrans:
       mockMode: false
       serverKeySecret: parkir-secrets
@@ -60,7 +60,7 @@ services:
   notification:
     enabled: true
     replicas: 1
-    iamRoleArn: arn:aws:iam::123456789012:role/parkir-notification   # SES + SecretsManager
+    iamRoleArn: arn:aws:iam::123456789012:role/ajipur-parkir-notification   # SES + SecretsManager
 
 # ---- Ingress: AWS Load Balancer Controller (ALB) ----
 ingress:

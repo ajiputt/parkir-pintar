@@ -1,0 +1,116 @@
+{{- /*
+Migration Job — pre-install/pre-upgrade hook.
+
+Jalanin setiap helm install / upgrade:
+  1. Init container: extract ConfigMap migrations ke /migrations folder
+     dengan structure schema/file.sql (rebuild dari flat key path)
+  2. Main container: run migrate CLI per schema, urut nama file
+  3. Job complete -> Helm lanjut install/upgrade app pods
+  4. Kalau Job fail, Helm rollback (atomic)
+
+DB credentials via K8s Secret parkir-secrets (di-sync oleh ExternalSecret
+dari AWS Secrets Manager). ESO harus running + secret available SEBELUM
+helm install.
+
+Hook-weight 0 (default), di-eksekusi setelah ConfigMap (-10).
+Delete policy: hook-succeeded supaya Job ke-cleanup setelah sukses.
+Tetap visible di kubectl logs sampai dihapus untuk debugging.
+*/}}
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: parkir-migrate-{{ now | unixEpoch }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: parkir-migrate
+    app.kubernetes.io/part-of: parkir-pintar
+    app.kubernetes.io/managed-by: helm
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600   # 10 menit timeout
+  ttlSecondsAfterFinished: 3600  # auto-cleanup setelah 1 jam
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: parkir-migrate
+        app.kubernetes.io/part-of: parkir-pintar
+    spec:
+      restartPolicy: OnFailure
+
+      # ----- Init container: rebuild folder structure dari flat ConfigMap keys -----
+      initContainers:
+        - name: rebuild-migrations-tree
+          image: alpine:3.20
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Rebuild migrations folder structure"
+              for f in /flat/*; do
+                fname=$(basename "$f")
+                # ConfigMap key: schema--filename.sql -> /migrations/schema/filename.sql
+                schema=$(echo "$fname" | sed 's/--.*//')
+                file=$(echo "$fname" | sed 's/^[^-]*--//')
+                mkdir -p "/migrations/$schema"
+                cp "$f" "/migrations/$schema/$file"
+              done
+              echo "==> Tree ready:"
+              ls -R /migrations
+          volumeMounts:
+            - name: flat-migrations
+              mountPath: /flat
+              readOnly: true
+            - name: migrations
+              mountPath: /migrations
+
+      # ----- Main container: run migrate untuk 4 schema -----
+      containers:
+        - name: migrate
+          image: migrate/migrate:v4.17.1
+          env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: parkir-secrets
+                  key: db-url
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Verify DB_URL di-set"
+              if [ -z "$DB_URL" ]; then
+                echo "[FAIL] DB_URL env empty — parkir-secrets gak ada?"
+                exit 1
+              fi
+
+              echo "==> Apply migrations per schema"
+              for schema in reservation billing payment notification; do
+                if [ ! -d "/migrations/$schema" ]; then
+                  echo "[SKIP] /migrations/$schema folder tidak ada"
+                  continue
+                fi
+                echo "==> migrate $schema"
+                migrate -path "/migrations/$schema" \
+                  -database "${DB_URL}&search_path=${schema}" up
+              done
+
+              echo "==> All migrations complete"
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+
+      volumes:
+        - name: flat-migrations
+          configMap:
+            name: parkir-migrations
+        - name: migrations
+          emptyDir: {}
+{{- end }}
