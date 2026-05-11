@@ -157,6 +157,12 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      # Compute short SHA (7-char) supaya tag image cocok dengan default deploy-eks.yml
+      # yang pakai `git rev-parse --short HEAD`.
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Build & push (GHCR + ECR)
         uses: docker/build-push-action@v6
         with:
@@ -166,8 +172,9 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
             ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ steps.sha.outputs.short }}
             ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:latest
             ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:${{ steps.sha.outputs.short }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
