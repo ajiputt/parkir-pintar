@@ -224,18 +224,18 @@ func applyMigrationsFromFile(t *testing.T, db *sql.DB, path string) {
 	require.NoError(t, err, "apply migration: %s", path)
 }
 
-// findMigrationsRoot — locate migrations folder dari root project.
-// Integration test ada di test/integration → ../.. = root.
+// findMigrationsRoot — locate deploy/migrations folder dari root project.
+// Integration test ada di test/integration → walk up cari deploy/migrations.
 func findMigrationsRoot(t *testing.T) string {
 	t.Helper()
 	wd, _ := os.Getwd()
 	for i := 0; i < 5; i++ {
-		candidate := filepath.Join(wd, "migrations")
+		candidate := filepath.Join(wd, "deploy", "migrations")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 		wd = filepath.Dir(wd)
 	}
-	t.Fatalf("migrations folder not found")
+	t.Fatalf("deploy/migrations folder not found")
 	return ""
 }
