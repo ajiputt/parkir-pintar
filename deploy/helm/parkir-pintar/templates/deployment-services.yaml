@@ -50,11 +50,17 @@ spec:
               value: {{ $.Values.nats.stream | quote }}
             - name: REDIS_ADDR
               value: {{ $.Values.redis.addr | quote }}
-            - name: DB_URL
+            # DB_URL_BASE dari secret (base URL tanpa search_path).
+            # DB_URL composed dengan append &search_path=<service-name> supaya
+            # query di service nge-resolve ke schema yang bener (table parking_area
+            # ada di schema 'reservation', dst).
+            - name: DB_URL_BASE
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.postgres.databaseSecret }}
                   key: {{ $.Values.postgres.databaseSecretKey }}
+            - name: DB_URL
+              value: "$(DB_URL_BASE)&search_path={{ $name }}"
             {{- if eq $name "reservation" }}
             - name: RESERVATION_GRPC_ADDR
               value: ":{{ $svc.grpcPort }}"
