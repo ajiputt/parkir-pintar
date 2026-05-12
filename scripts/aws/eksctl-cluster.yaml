@@ -83,31 +83,57 @@ iam:
       roleName: ajipur-parkir-notification-role
       roleOnly: true
 
-# ---- Managed Node Group ----
-# EC2 Spot untuk demo (cost 70% lebih murah).
-# Production: mix Spot + On-Demand (mis. 70/30) untuk reliability.
+# ---- Managed Node Groups ----
+# Strategi: On-Demand sebagai baseline (reliable), Spot sebagai capacity boost.
+# Kalau Spot pool kosong, On-Demand jamin minimal 1 node untuk system pods
+# (ESO, ALB Controller, NATS). Avoid full-Spot risk di ap-southeast-3 yang
+# Spot pool depth-nya terbatas.
 managedNodeGroups:
+  # Baseline: 1 On-Demand node - guaranteed availability untuk system pods.
+  - name: workers-ondemand
+    instanceTypes:
+      - t3.medium
+    spot: false
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 2
+    volumeSize: 30
+    volumeType: gp3
+    privateNetworking: true
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        autoScaler: true
+        ebs: true
+        cloudWatch: true
+    labels:
+      role: worker
+      lifecycle: on-demand
+    tags:
+      Project: parkir-pintar
+      NodeGroup: workers-ondemand
+
+  # Capacity boost: Spot untuk app workload (hemat 70% kalau available).
+  # Diversify instance types supaya kalau satu pool kosong, eksctl coba pool lain.
   - name: workers-spot
     instanceTypes:
-      # Diversify Spot pool untuk reduce interruption risk.
-      # Hanya pakai instance type yang available di ap-southeast-3 Jakarta:
-      # t3a series gak ada di Jakarta (cuma t3 + m5/m6i).
       - t3.medium
+      - t3.large
       - m5.large
       - m6i.large
     spot: true
-    desiredCapacity: 2
-    minSize: 1
-    maxSize: 4
+    desiredCapacity: 1   # turun dari 2 - On-Demand sudah cover baseline
+    minSize: 0           # 0 supaya Spot bisa hilang tanpa ngeganggu
+    maxSize: 3
     volumeSize: 30
     volumeType: gp3
-    privateNetworking: true  # node di private subnet, egress via NAT
+    privateNetworking: true
     iam:
       withAddonPolicies:
-        imageBuilder: true   # ECR pull
-        autoScaler: true     # Cluster Autoscaler
-        ebs: true            # EBS CSI driver (untuk StatefulSet NATS)
-        cloudWatch: true     # CloudWatch Logs writer
+        imageBuilder: true
+        autoScaler: true
+        ebs: true
+        cloudWatch: true
     labels:
       role: worker
       lifecycle: spot

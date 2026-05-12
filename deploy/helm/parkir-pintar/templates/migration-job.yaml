@@ -42,8 +42,9 @@ spec:
     spec:
       restartPolicy: OnFailure
 
-      # ----- Init container: rebuild folder structure dari flat ConfigMap keys -----
+      # ----- Init containers -----
       initContainers:
+        # 1. Rebuild folder structure dari flat ConfigMap keys
         - name: rebuild-migrations-tree
           image: alpine:3.20
           command:
@@ -68,6 +69,34 @@ spec:
               readOnly: true
             - name: migrations
               mountPath: /migrations
+
+        # 2. Pre-create extensions + schemas SEBELUM migrate CLI jalan.
+        # migrate CLI butuh schema_migrations table di schema target. Tanpa
+        # pre-create schema, migrate connect pakai search_path=reservation
+        # lalu gagal bikin schema_migrations karena schema belum exist.
+        - name: init-db-schemas
+          image: postgres:16-alpine
+          env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: parkir-secrets
+                  key: db-url
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Pre-create extensions + 4 schemas di DB"
+              psql "$DB_URL" <<'SQL'
+              CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+              CREATE EXTENSION IF NOT EXISTS btree_gist;
+              CREATE SCHEMA IF NOT EXISTS reservation;
+              CREATE SCHEMA IF NOT EXISTS billing;
+              CREATE SCHEMA IF NOT EXISTS payment;
+              CREATE SCHEMA IF NOT EXISTS notification;
+              SQL
+              echo "==> Schemas ready"
 
       # ----- Main container: run migrate untuk 4 schema -----
       containers:

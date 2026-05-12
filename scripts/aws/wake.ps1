@@ -107,6 +107,33 @@ if ($clusterExists) {
 
 # Update kubeconfig
 aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+
+# Verify nodegroup actually created + has nodes ready.
+# eksctl create cluster kadang return 0 padahal nodegroup gagal launch
+# (Spot capacity issue, ASG launch error). Detect early supaya gak fail di
+# step Helm install yang lebih lambat.
+Write-Step "Verify worker nodes available"
+$nodeCount = 0
+for ($i = 0; $i -lt 30; $i++) {
+    $nodeCount = (kubectl get nodes --no-headers 2>$null | Measure-Object).Count
+    if ($nodeCount -gt 0) {
+        Write-Ok "$nodeCount node(s) ready"
+        break
+    }
+    Write-Host "Waiting nodes to join cluster ($($i+1)/30)..."
+    Start-Sleep -Seconds 10
+}
+if ($nodeCount -eq 0) {
+    Write-Host "[FAIL] Cluster gak punya worker node setelah 5 menit." -ForegroundColor Red
+    Write-Host "Diagnose dengan:" -ForegroundColor Yellow
+    Write-Host "  aws eks list-nodegroups --cluster-name $CLUSTER_NAME --region $AWS_REGION"
+    Write-Host "  aws autoscaling describe-auto-scaling-groups --region $AWS_REGION"
+    Write-Host ""
+    Write-Host "Kemungkinan Spot capacity issue. Manual fix - create On-Demand nodegroup:" -ForegroundColor Yellow
+    Write-Host "  eksctl create nodegroup --cluster $CLUSTER_NAME --name workers-ondemand-manual ``"
+    Write-Host "    --node-type t3.medium --nodes 2 --node-private-networking --region $AWS_REGION"
+    exit 1
+}
 Write-Ok "kubeconfig updated"
 
 # ----------------------------------------------------------------------------
@@ -337,8 +364,13 @@ helm upgrade --install external-secrets external-secrets/external-secrets `
     --namespace external-secrets --create-namespace `
     --set serviceAccount.create=false `
     --set serviceAccount.name=external-secrets-sa `
-    --wait
-Write-Ok "ESO installed"
+    --wait --timeout 5m
+
+# Wait sampai semua ESO deployment (controller + cert-controller + webhook) Available.
+# helm --wait kadang return sebelum webhook bener-bener ready, padahal CD pipeline
+# butuh webhook reachable untuk apply ExternalSecret tanpa validation error.
+kubectl wait deployment -n external-secrets --all --for=condition=Available --timeout=180s
+Write-Ok "ESO installed + webhook ready"
 
 # ============================================================================
 # 10. Install Helm: NATS JetStream

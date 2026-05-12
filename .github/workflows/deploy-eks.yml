@@ -164,7 +164,27 @@ jobs:
           kubectl create namespace parkir --dry-run=client -o yaml | kubectl apply -f -
           kubectl delete sa notification -n parkir --ignore-not-found
 
-      # ----- Apply ExternalSecret (sync Secrets Manager → K8s Secret) -----
+      # ----- Wait ESO webhook ready (mencegah validating webhook error) -----
+      # ESO chart deploy webhook service terpisah. Apply ExternalSecret butuh
+      # webhook reachable kalau gak akan error "service not found".
+      - name: Wait External Secrets Operator webhook ready
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          echo "==> Wait ESO deployments ready"
+          kubectl wait deployment -n external-secrets \
+            --all --for=condition=Available --timeout=180s || true
+          kubectl get pods -n external-secrets
+          # Verify service exists
+          for i in $(seq 1 30); do
+            if kubectl get svc external-secrets-webhook -n external-secrets >/dev/null 2>&1; then
+              echo "[OK] external-secrets-webhook service ready"
+              break
+            fi
+            echo "[wait] waiting for external-secrets-webhook service ($i/30)"
+            sleep 5
+          done
+
+      # ----- Apply ExternalSecret (sync Secrets Manager -> K8s Secret) -----
       - name: Apply ExternalSecret manifest
         if: github.event.inputs.dry_run == 'false'
         run: |
@@ -172,10 +192,10 @@ jobs:
           # Tunggu secret ter-populate (ESO refresh)
           for i in $(seq 1 30); do
             if kubectl get secret parkir-secrets -n parkir >/dev/null 2>&1; then
-              echo "✅ parkir-secrets populated"
+              echo "[OK] parkir-secrets populated"
               break
             fi
-            echo "⏳ waiting for ESO sync ($i/30)"
+            echo "[wait] waiting for ESO sync ($i/30)"
             sleep 5
           done
 
