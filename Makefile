@@ -107,17 +107,24 @@ cover: test-unit ## Tampilkan coverage HTML
 # ----- Database ---------------------------------------------------------------
 
 .PHONY: migrate-up
-migrate-up: ## Jalankan migration semua schema
-	@for s in reservation billing payment; do \
+migrate-up: ## Jalankan migration semua schema (reservation, billing, payment, notification)
+	@for s in reservation billing payment notification; do \
 		echo "==> migrate $$s"; \
-		migrate -path migrations/$$s -database "$(DB_URL)&search_path=$$s" up; \
+		migrate -path deploy/migrations/$$s -database "$(DB_URL)&search_path=$$s" up; \
 	done
 
 .PHONY: migrate-down
-migrate-down: ## Rollback semua migration
-	@for s in reservation billing payment; do \
-		migrate -path migrations/$$s -database "$(DB_URL)&search_path=$$s" down 1; \
+migrate-down: ## Rollback 1 migration per schema
+	@for s in reservation billing payment notification; do \
+		migrate -path deploy/migrations/$$s -database "$(DB_URL)&search_path=$$s" down 1; \
 	done
+
+.PHONY: helm-sync-migrations
+helm-sync-migrations: ## Sync deploy/migrations/ ke chart dir (untuk local helm template/install)
+	@rm -rf deploy/helm/parkir-pintar/migrations
+	@mkdir -p deploy/helm/parkir-pintar/migrations
+	@cp -r deploy/migrations/* deploy/helm/parkir-pintar/migrations/
+	@echo "==> Migrations synced ke deploy/helm/parkir-pintar/migrations/"
 
 .PHONY: seed
 seed: ## Seed parking area + 5 floor + 750 spot

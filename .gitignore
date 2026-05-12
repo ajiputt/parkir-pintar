@@ -65,6 +65,10 @@ override.tf.json
 # Packaged chart artifacts — published ke OCI registry, bukan git.
 deploy/helm/*/charts/*.tgz
 deploy/helm/*/Chart.lock
+# Migrations di chart dir adalah transient copy dari deploy/migrations/
+# (source of truth). Auto-sync via `make helm-sync-migrations` lokal atau
+# step "Sync migrations ke Helm chart dir" di .github/workflows/deploy-eks.yml.
+deploy/helm/parkir-pintar/migrations/
 
 # ----- Docker ----------------------------------------------------------------
 # Volume data persistent — kalau ke-commit bisa leak credential.

@@ -1,142 +1,198 @@
-# Postman Collection — Local Dev
+# Postman Collection — ParkirPintar Demo
 
-Collection untuk test ParkirPintar end-to-end via **gateway** (port 8080).
+Collection siap-pakai untuk demo Smart Parking Marketplace. Semua skenario di-organize per folder dan bisa dijalankan urut via Collection Runner.
 
-## Arsitektur
+## Files
 
-```
-Postman / curl
-     │  HTTP/1.1
-     ▼
-┌──────────────┐  HTTP/2 + gRPC
-│   Gateway    │ ─────────────────────────────┐
-│  :8080 (REST)│                              │
-└──────────────┘                              │
-     │ grpc-gateway runtime mux                │
-     │ (auto-routing dari .proto annotation)   │
-     ▼                                         ▼
-┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│ Reservation │  │   Billing   │  │   Payment   │
-│   :9091     │  │    :9092    │  │    :9093    │
-│   (gRPC)    │  │   (gRPC)    │  │   (gRPC)    │
-└─────────────┘  └─────────────┘  └─────────────┘
-                                          │
-                                          │ gRPC (Payment → Billing)
-                                          ▼
-                                    [Billing :9092]
-```
+| File | Purpose |
+|------|---------|
+| `parkir-pintar-demo.postman_collection.json` | Collection utama, 14 folder skenario |
+| `local.postman_environment.json` | Environment vars untuk local dev (localhost:8080) |
+| `aws.postman_environment.json` | Environment vars untuk AWS EKS deployment (ALB DNS) |
 
-Public client cuma kontak gateway. Antar service pakai gRPC. NATS jalan paralel untuk async events.
+## Import
 
-## Cara Pakai
+1. Buka Postman → **Import** → drop collection + environment file yang relevan
+2. Pilih environment di dropdown kanan-atas:
+   - **"ParkirPintar - Local"** untuk testing local docker-compose / standalone services
+   - **"ParkirPintar - AWS EKS"** untuk testing deployment AWS (replace baseUrl dulu dengan ALB DNS)
+3. Pastikan semua service running (lihat prerequisite di bawah untuk local, atau pods Running di AWS)
 
-1. **Install Postman**: https://www.postman.com/downloads/
+### Setup AWS environment
 
-2. **Import collection**:
-   - Postman → File → Import → pilih `ParkirPintar-Local.postman_collection.json`
+Setelah Helm deploy ke EKS, ambil ALB DNS:
 
-3. **Run service stack** (urutan):
-   ```powershell
-   # Terminal 1 — Reservation
-   $env:RESERVATION_GRPC_ADDR=":9091"; cd services\reservation; go run .\cmd
-
-   # Terminal 2 — Billing
-   $env:BILLING_GRPC_ADDR=":9092"; cd services\billing; go run .\cmd
-
-   # Terminal 3 — Payment (point ke billing gRPC)
-   $env:PAYMENT_GRPC_ADDR=":9093"; $env:BILLING_GRPC_ADDR_DIAL="localhost:9092"; cd services\payment; go run .\cmd
-
-   # Terminal 4 — Gateway
-   $env:GATEWAY_HTTP_PORT=":8080"
-   $env:RESERVATION_GRPC_ADDR_DIAL="localhost:9091"
-   $env:BILLING_GRPC_ADDR_DIAL="localhost:9092"
-   $env:PAYMENT_GRPC_ADDR_DIAL="localhost:9093"
-   cd services\gateway; go run .\cmd
-   ```
-
-4. **Run request**:
-   - Smoke: **Health & Info** → **Healthz**
-   - Happy path: **Availability** → **Reservation Lifecycle** → (event triggers Billing) → **Billing → Get Invoice by Reservation** → **Payment → Create Payment** → **Get Payment**
-
-## Struktur Collection
-
-| Folder | Kapan dipakai | Endpoint |
-|---|---|---|
-| **Health & Info** | Smoke test gateway | `{{baseUrl}}/healthz` |
-| **Availability (Read)** | Verify spot data | `GET /v1/availability` |
-| **Reservation Lifecycle** | Test happy path booking | `POST /v1/reservations`, `:checkin`, `:checkout`, `:cancel` |
-| **Idempotency Tests** | Verify dedup behavior | Same key → cached response |
-| **Error Cases** | Validation tests | Missing fields, bad UUIDs |
-| **Billing Service** | Test invoice query | `GET /v1/invoices/{id}`, `GET /v1/reservations/{id}/invoice` |
-| **Payment Service** | Test QRIS + webhook | `POST /v1/payments`, `GET /v1/payments/{id}`, webhook |
-
-## Variables
-
-| Variable | Source | Purpose |
-|---|---|---|
-| `baseUrl` | static | Gateway URL `http://localhost:8080` (default) |
-| `reservationDirectUrl` | static | Reservation health probe `http://localhost:9191` |
-| `billingDirectUrl` | static | Billing health probe `http://localhost:9192` |
-| `paymentDirectUrl` | static | Payment health probe `http://localhost:9193` |
-| `reservationId` | Auto-set dari `Create Reservation` test script | Dipakai Check In/Out, Cancel, Get Invoice |
-| `spotId` | Auto-set dari `Create Reservation` | Dipakai Create User-selected |
-| `invoiceId` | Manual setelah cek billing | Dipakai Create Payment |
-| `paymentId` | Auto-set dari `Create Payment` | Dipakai Get Payment |
-| `idempotencyKey` | Pre-request script (per request) | Mutating endpoint header |
-| `fixedIdemKey` | Manual untuk idempotency test | Sama untuk replay |
-
-## Catatan Penting
-
-### Routing Source of Truth
-
-Semua REST path di-derive otomatis dari `option (google.api.http)` annotation di `proto/{service}/v1/*.proto`. Mau ubah path? Edit proto, run `make proto`, restart gateway. **Jangan edit gateway main.go** — `runtime.NewServeMux` reads dari registered handlers.
-
-### Webhook Khusus
-
-`POST /v1/payments/midtrans/notification` adalah satu-satunya HTTP route di gateway yang **bukan** grpc-gateway. Diteruskan verbatim (raw body + headers) ke payment HTTP `:9193` karena Midtrans signature di-verify pada raw bytes.
-
-### Direct Service URL untuk Debugging
-
-`{{billingDirectUrl}}/healthz` dan sejenisnya bypass gateway, useful saat menyelidiki apakah masalah di gateway atau service itu sendiri.
-
-## Debugging
-
-### "Could not get any response" di gateway endpoint
-
-Gateway tidak running, atau salah satu backend gRPC tidak bisa di-dial. Cek:
 ```powershell
-curl.exe http://localhost:8080/healthz
-curl.exe http://localhost:9191/healthz   # reservation
-curl.exe http://localhost:9192/healthz   # billing
-curl.exe http://localhost:9193/healthz   # payment
+$alb = kubectl get ingress -n parkir -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}'
+
+# Replace placeholder di env file
+$content = Get-Content test/postman/aws.postman_environment.json -Raw
+$content -replace 'REPLACE-WITH-ALB-DNS\.ap-southeast-3\.elb\.amazonaws\.com', $alb | Set-Content test/postman/aws.postman_environment.json -NoNewline
 ```
 
-### Gateway log: "register reservation handler: connection refused"
+## Prerequisite
 
-Backend service belum running saat gateway startup. grpc-gateway dial saat init (eager). Solusi: jalanin service backend dulu, baru gateway.
+Service yang harus up sebelum mulai:
 
-### "404 Not Found" untuk endpoint business
+```
+postgres      :5432
+redis         :6379
+nats          :4222
+gateway       :8080  (HTTP entrypoint)
+reservation   :9091  (gRPC) + :9191 (HTTP probes)
+billing       :9092  (gRPC) + :9192 (HTTP probes)
+payment       :9093  (gRPC) + :9193 (HTTP probes + webhook)
+notification           (NATS subscriber, no public port)
+```
 
-Path tidak match annotation. Verify proto annotation, run `make proto`, rebuild gateway.
+Cara start cepat:
 
-### "500 Internal Server Error" + log "relation reservation does not exist"
-
-Migration belum apply atau search_path issue. Re-apply:
 ```powershell
-psql -U gopark -d gopark -f migrations\reservation\001_init.up.sql
+# Dari repo root
+docker compose up -d postgres redis nats
+.\scripts\dev\run-reservation.ps1
+.\scripts\dev\run-billing.ps1
+.\scripts\dev\run-payment.ps1
+.\scripts\dev\run-notification.ps1
+.\scripts\dev\run-gateway.ps1
 ```
 
-### Idempotency test gagal: response berbeda
-
-Cek log service. Kalau ada warning `idempotency: store error`, tabel `idempotency_keys` belum ada. Re-run migration.
-
-## Run via Newman (CLI)
+Quick health check sebelum demo:
 
 ```bash
-npm install -g newman
-newman run test/postman/ParkirPintar-Local.postman_collection.json \
-  --env-var baseUrl=http://localhost:8080 \
-  --reporters cli,json --reporter-json-export newman-result.json
+curl http://localhost:8080/readyz | jq
 ```
 
-Cocok untuk integrasi ke CI/CD pipeline (`.github/workflows/e2e.yml`).
+Semua check harus `status: ready`.
+
+## Folder Structure
+
+| # | Folder | Demonstrates |
+|---|--------|--------------|
+| 00 | Auth | Issue JWT via dev-token endpoint (auto-set ke env) |
+| 01 | Happy Flow: AUTO Payment | E2E auto-debit (no QRIS) |
+| 02 | Happy Flow: MANUAL Payment | E2E QRIS scan flow |
+| 03 | Expired Flow | ExpiryWorker auto-set EXPIRED + no-show penalty |
+| 04 | Overnight Stay | Pricing OVERNIGHT 20000 IDR flat |
+| 05 | Cancel After CONFIRMED | Booking fee charged (ADR-0014) |
+| 06 | Manual Until Blocked | OVERDUE worker → driver block |
+| 07 | Idempotency | Same key = same response (Stripe-style) |
+| 08 | One Driver, One Active | RES-031 enforcement |
+| 09 | User-Selected Spot | mode=USER + spot_id |
+| 10 | Concurrent Booking | Race condition (run via Runner) |
+| 11 | Rate Limit Burst | Heavy tier 5rps burst 10 → 429 |
+| 12 | Health & Readiness | Probe gateway + tiap service |
+| 13 | Webhook Simulation | Midtrans push (mock + signature fail) |
+| 14 | Reference | Per-resource single requests |
+
+## How to Run
+
+### Demo manual (per request)
+
+Buka folder → klik request → **Send**. Test scripts otomatis ekstrak ID ke env (bisa lihat di Console untuk verify).
+
+### Demo otomatis (per folder via Runner)
+
+1. Right-click folder → **Run folder**
+2. Klik **Run ParkirPintar — Demo Scenarios**
+3. Tunggu sampai semua hijau
+
+Untuk skenario yang butuh waktu (expired, overdue), set timer manual atau pakai env override (lihat tip di tiap folder description).
+
+### Demo skenario khusus
+
+**Folder 10 — Concurrent Booking:**
+- Run dengan `Iterations: 5`, `Delay: 0`, `Persist environment: yes`
+- Atau pakai bash one-liner di description folder
+
+**Folder 11 — Rate Limit Burst:**
+- Run dengan `Iterations: 15`, `Delay: 0`
+- Iterasi 1-10 → 200, iterasi 11+ → 429
+
+## Variable Conventions
+
+| Var | Auto-set by | Description |
+|-----|-------------|-------------|
+| `baseUrl` | env (manual) | `http://localhost:8080` |
+| `driver_id` | env / dev-token | UUID driver |
+| `jwt_token` | dev-token test | Bearer token (collection-level auth) |
+| `reservation_id` | CreateReservation test | Latest reservation |
+| `invoice_id` | GetInvoice test | Latest invoice |
+| `payment_id` | CreatePayment test | Latest payment |
+| `spot_id`, `user_spot_id` | response data | Spot ID picked |
+| `idempotency_key` | collection prerequest | Auto-gen kalau kosong |
+
+## Demo Tips
+
+### Speed up "expired" demo
+Set di `services/reservation/.env.local`:
+```
+RESERVATION_HOLD_DURATION=30s
+RESERVATION_EXPIRY_SCAN_INTERVAL=5s
+```
+Restart reservation service. Sekarang reservation expire dalam ~30 detik.
+
+### Speed up "overdue" demo
+Set di `services/billing/.env.local`:
+```
+BILLING_OVERDUE_GRACE=30s
+BILLING_OVERDUE_INTERVAL=10s
+```
+Restart billing service.
+
+### Backdate untuk overnight demo
+Run SQL langsung:
+```sql
+UPDATE reservation.reservation
+SET checkin_at = NOW() - INTERVAL '12 hour'
+WHERE id = '<reservation_id>';
+```
+
+### Auth modes
+- `AUTH_PASSTHROUGH_NO_TOKEN=true` (default): demo gak perlu JWT, request tanpa Bearer tetap lewat
+- `AUTH_PASSTHROUGH_NO_TOKEN=false`: enforce mode, wajib jalankan **00 — Auth** dulu
+
+### Webhook signature (live mode)
+Kalau `PAYMENT_MOCK_MODE=false`, signature di-verify SHA-512:
+```
+sha512(order_id + status_code + gross_amount + server_key)
+```
+Generate di terminal:
+```bash
+echo -n "ORDER_ID200.5000.00YOUR_SERVER_KEY" | sha512sum
+```
+Lalu paste hasil hex ke header `signature_key` di body.
+
+## Recommended Demo Order (15 menit)
+
+1. **00 — Auth** (jaga-jaga kalau enforce mode)
+2. **12 — Health** › **Readyz gateway** (tunjukin all green)
+3. **01 — Happy Flow AUTO** (E2E, ~30 detik)
+4. **02 — Happy Flow MANUAL** (E2E + QRIS)
+5. **07 — Idempotency** (replay same key)
+6. **08 — One Driver, One Active** (business rule)
+7. **05 — Cancel After Confirmed** (booking fee, bukan VOID)
+8. **11 — Rate Limit Burst** (Run 15× → lihat 429)
+9. **06 — Manual Until Blocked** (kalau ada waktu, perlu wait grace)
+
+Skenario 03/04/10 di-mention saja kalau interviewer tanya, atau jalankan sebagai "follow-up demo" pakai env override.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `connection refused :8080` | Gateway down | `.\scripts\dev\run-gateway.ps1` |
+| `connection refused :9091` (di /readyz) | Reservation backend down | Start reservation service |
+| 401 di semua request | `AUTH_PASSTHROUGH_NO_TOKEN=false` + jwt_token kosong | Run **00 — Auth › Get Dev Token** dulu |
+| Idempotency error 422 | DB schema belum migrated | `migrate -path migrations/* -database "$DB_URL" up` |
+| 429 unexpected | Rate limit hit (Redis state) | Tunggu 1 detik atau `redis-cli FLUSHDB` |
+| `payment_mode field unknown` | proto stub belum re-generated | `make proto` |
+
+## Update Collection
+
+Kalau proto endpoint berubah:
+
+1. Edit file collection JSON manual, atau
+2. Hapus + import ulang dari Postman (export ke folder ini, commit)
+
+Untuk import dari OpenAPI spec (auto-gen, less customization): `http://localhost:8080/openapi.json` → Postman Import → URL.

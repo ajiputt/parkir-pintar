@@ -471,7 +471,7 @@ Write-Host "  NATS:           nats.parkir-system.svc.cluster.local:4222"
 Write-Host ""
 Write-Host "  Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Sync migrations ke chart dir (kalau ada perubahan):"
-Write-Host "     cp -r migrations/* deploy/helm/parkir-pintar/migrations/"
+Write-Host "     make helm-sync-migrations   (atau: cp -r deploy/migrations/* deploy/helm/parkir-pintar/migrations/)"
 Write-Host "  2. Trigger 'Deploy to AWS EKS' workflow di GitHub Actions"
 Write-Host "     (Helm pre-install Job akan auto-migrate 4 schema)"
 Write-Host ""

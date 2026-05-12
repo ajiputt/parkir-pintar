@@ -121,14 +121,14 @@ jobs:
           kubectl config current-context
           kubectl get nodes
 
-      # ----- Sync migrations dari root ke chart dir -----
+      # ----- Sync migrations dari deploy/migrations/ ke chart dir -----
       # Helm .Files.Glob hanya bisa read file di dalam chart folder.
-      # Source of truth: root migrations/, chart dir di-sync di build time.
+      # Source of truth: deploy/migrations/, chart dir di-sync di build time.
       - name: Sync migrations ke Helm chart dir
         run: |
           rm -rf deploy/helm/parkir-pintar/migrations
           mkdir -p deploy/helm/parkir-pintar/migrations
-          cp -r migrations/* deploy/helm/parkir-pintar/migrations/
+          cp -r deploy/migrations/* deploy/helm/parkir-pintar/migrations/
           echo "==> Migrations synced:"
           find deploy/helm/parkir-pintar/migrations -name '*.sql' | sort
 
@@ -241,9 +241,9 @@ jobs:
         if: github.event.inputs.dry_run == 'false' && steps.alb.outputs.dns != ''
         run: |
           ALB="${{ steps.alb.outputs.dns }}"
-          echo "Smoke testing https://$ALB/healthz"
+          echo "Smoke testing http://$ALB/healthz"
           for i in 1 2 3 4 5 6; do
-            if curl -skf "https://$ALB/healthz"; then
+            if curl -sf "http://$ALB/healthz"; then
               echo "✅ Healthy"
               exit 0
             fi

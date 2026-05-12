@@ -234,7 +234,7 @@ func TestE2E_PaymentMockSuccess(t *testing.T) {
 	//
 	// Full payment lifecycle (create reservation → checkout → get invoice →
 	// create payment → webhook simulation) di-cover via Postman collection
-	// (postman/parkir-pintar-demo.postman_collection.json folder 02), bukan
+	// (test/postman/parkir-pintar-demo.postman_collection.json folder 02), bukan
 	// di automated e2e test ini.
 	//
 	// Known issue: payment service current return 500 untuk "invoice not found"

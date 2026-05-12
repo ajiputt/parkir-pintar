@@ -11,7 +11,7 @@ import (
 
 // PostgresStore — production-grade idempotency store di Postgres.
 //
-// Schema (lihat migrations/<service>/00X_idempotency.sql):
+// Schema (lihat deploy/migrations/<service>/00X_idempotency.sql):
 //
 //	CREATE TABLE idempotency_keys (
 //	  key             TEXT PRIMARY KEY,

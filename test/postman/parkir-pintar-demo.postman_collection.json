@@ -1,0 +1,1407 @@
+{
+  "info": {
+    "_postman_id": "f7c1a2e0-7a01-4f1e-9a8b-parkir-pintar-demo",
+    "name": "ParkirPintar — Demo Scenarios",
+    "description": "End-to-end demo collection untuk Smart Parking Marketplace.\n\nTiap folder = 1 skenario demo dan bisa dijalankan urut via Collection Runner. Test scripts otomatis chain variable (reservation_id, invoice_id, payment_id, jwt_token) ke environment.\n\n**Prasyarat:**\n- Semua service running (gateway :8080, reservation :9091, billing :9092, payment :9093, notification, postgres, redis, nats)\n- Import `local.postman_environment.json`\n- Run \"00 — Auth › Get Dev Token\" sekali untuk dapat JWT (kalau AUTH_PASSTHROUGH_NO_TOKEN=false)\n\n**Variable conventions:**\n- `{{baseUrl}}` = http://localhost:8080\n- `{{driver_id}}` = uuid dummy (default di env)\n- `{{jwt_token}}` = di-set otomatis oleh dev-token request\n- `{{reservation_id}}`, `{{invoice_id}}`, `{{payment_id}}` = di-set by test scripts\n- `{{idempotency_key}}` = di-generate by pre-request script saat dibutuhkan\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{jwt_token}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-generate Idempotency-Key kalau request butuh dan belum di-set",
+          "if (!pm.variables.get('idempotency_key')) {",
+          "  pm.variables.set('idempotency_key', 'idem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "00 — Auth",
+      "description": "Issue JWT untuk Bearer token. Endpoint hanya aktif saat APP_ENV != prod.",
+      "item": [
+        {
+          "name": "Get Dev Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('has token', () => pm.expect(j.token).to.be.a('string'));",
+                  "pm.environment.set('jwt_token', j.token);",
+                  "pm.environment.set('driver_id', j.sub);",
+                  "console.log('JWT set untuk driver_id =', j.sub);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"ttl_sec\": 3600\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/dev-token",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "auth", "dev-token"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Happy Flow: AUTO Payment",
+      "description": "Driver dengan saldo wallet — invoice ISSUED → auto-charge → PAID tanpa step manual.\n\nUrutan: Availability → Create (AUTO) → Check-in → Check-out → Verify Invoice PAID.",
+      "item": [
+        {
+          "name": "Get Availability",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('has floors', () => pm.expect(j.floors).to.be.an('array').that.is.not.empty);",
+                  "console.log('Total CAR available:', j.total_car_available);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/availability",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "availability"]
+            }
+          }
+        },
+        {
+          "name": "Create Reservation (AUTO, SYSTEM mode)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Fresh idempotency key untuk request ini",
+                  "pm.variables.set('idempotency_key', 'auto-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('reservation CONFIRMED', () => pm.expect(j.reservation.state).to.eql('CONFIRMED'));",
+                  "pm.test('payment_mode = AUTO', () => pm.expect(j.reservation.payment_mode).to.eql('AUTO'));",
+                  "pm.environment.set('reservation_id', j.reservation.id);",
+                  "pm.environment.set('spot_id', j.reservation.spot.id);",
+                  "console.log('Reservation:', j.reservation.id, '| Spot:', j.reservation.spot.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B1234XYZ\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('state = CHECKED_IN', () => pm.expect(j.state).to.eql('CHECKED_IN'));",
+                  "pm.test('checkin_at populated', () => pm.expect(j.checkin_at).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkin",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkin"]
+            }
+          }
+        },
+        {
+          "name": "Check-out",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('state = CHECKED_OUT', () => pm.expect(j.state).to.eql('CHECKED_OUT'));",
+                  "pm.test('checkout_at populated', () => pm.expect(j.checkout_at).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkout"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice (expect PAID)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Beri waktu auto-pay subscriber + worker NATS untuk process",
+                  "setTimeout(() => {}, 1500);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('invoice PAID (auto)', () => pm.expect(j.status).to.eql('PAID'));",
+                  "pm.test('payment_mode AUTO', () => pm.expect(j.payment_mode).to.eql('AUTO'));",
+                  "pm.environment.set('invoice_id', j.id);",
+                  "console.log('Total:', j.total.amount, j.total.currency);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}/invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}", "invoice"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Happy Flow: MANUAL Payment (QRIS)",
+      "description": "Driver tanpa saldo — invoice ISSUED, driver call CreatePayment → scan QRIS → webhook → PAID.\n\nUrutan: Create (MANUAL) → Check-in → Check-out → Get Invoice (ISSUED) → CreatePayment → GetPayment → (Webhook simulasi di folder 13).",
+      "item": [
+        {
+          "name": "Create Reservation (MANUAL)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": ["pm.variables.set('idempotency_key', 'manual-' + Date.now());"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('payment_mode = MANUAL', () => pm.expect(j.reservation.payment_mode).to.eql('MANUAL'));",
+                  "pm.environment.set('reservation_id', j.reservation.id);",
+                  "console.log('Manual reservation:', j.reservation.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B5678QRS\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"MANUAL\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Check-in",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkin",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkin"]
+            }
+          }
+        },
+        {
+          "name": "Check-out",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkout"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice (expect ISSUED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('invoice ISSUED (waiting payment)', () => pm.expect(j.status).to.eql('ISSUED'));",
+                  "pm.test('payment_mode MANUAL', () => pm.expect(j.payment_mode).to.eql('MANUAL'));",
+                  "pm.environment.set('invoice_id', j.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}/invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}", "invoice"]
+            }
+          }
+        },
+        {
+          "name": "Create Payment (QRIS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('status PENDING', () => pm.expect(j.status).to.eql('PENDING'));",
+                  "pm.test('has qr_string', () => pm.expect(j.qr_string).to.be.a('string'));",
+                  "pm.environment.set('payment_id', j.id);",
+                  "console.log('QR string:', j.qr_string.substring(0, 40), '...');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice_id\": \"{{invoice_id}}\",\n  \"method\": \"QRIS\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "payments"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/payments/{{payment_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "payments", "{{payment_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Expired Flow",
+      "description": "Driver bikin reservation tapi gak check-in dalam holdDuration (default 1h). ExpiryWorker auto-set state=EXPIRED + apply no-show penalty 5000 IDR.\n\n**Demo tip:** set `RESERVATION_HOLD_DURATION=30s` di .env.local supaya cepat lihat efek.",
+      "item": [
+        {
+          "name": "Create Reservation (will expire)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": ["pm.variables.set('idempotency_key', 'expire-' + Date.now());"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.environment.set('reservation_id', j.reservation.id);",
+                  "console.log('Tunggu sampai expires_at:', j.reservation.expires_at);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B9999EXP\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Get Reservation (after expiry — expect EXPIRED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('state EXPIRED', () => pm.expect(j.state).to.eql('EXPIRED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice (expect ISSUED with NO_SHOW_PENALTY)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}/invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}", "invoice"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Overnight Stay",
+      "description": "Driver check-in pagi, check-out keesokan harinya. Pricing engine charge OVERNIGHT 20000 IDR flat (bukan hourly multiplier).\n\n**Demo tip:** untuk lihat efek tanpa nunggu real 24h, jalankan di staging dengan TZ override atau sentuh DB checkin_at langsung.",
+      "item": [
+        {
+          "name": "Create Reservation",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.variables.set('idempotency_key', 'overnight-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.environment.set('reservation_id', j.reservation.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B7777OVN\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Check-in",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkin",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkin"]
+            }
+          }
+        },
+        {
+          "name": "(Manual step) Backdate checkin_at via DB — see README",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('SKIP — manual SQL step', () => pm.expect(true).to.be.true);",
+                  "console.log('Run di postgres untuk demo overnight:');",
+                  "console.log(\"UPDATE reservation.reservation SET checkin_at = NOW() - INTERVAL '12 hour' WHERE id = '{{reservation_id}}';\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Check-out (expect OVERNIGHT line item)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkout"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice (expect OVERNIGHT 20000)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const overnight = (j.items || []).find(it => it.type === 'OVERNIGHT');",
+                  "pm.test('has OVERNIGHT line item', () => pm.expect(overnight).to.exist);",
+                  "if (overnight) console.log('OVERNIGHT amount:', overnight.amount.amount);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}/invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}", "invoice"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Cancel After CONFIRMED (booking fee charged)",
+      "description": "Per ADR-0014: cancel SETELAH state=CONFIRMED tetap charge BOOKING_FEE 5000 IDR (bukan VOID). Beda dari cancel saat PENDING (full void).",
+      "item": [
+        {
+          "name": "Create Reservation",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.variables.set('idempotency_key', 'cancel-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.environment.set('reservation_id', j.reservation.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B0001CNL\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('state CANCELLED', () => pm.expect(j.state).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"changed plans\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:cancel"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice (expect ISSUED with BOOKING_FEE only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('invoice ISSUED (not VOID)', () => pm.expect(j.status).to.match(/ISSUED|PAID/));",
+                  "const fee = (j.items || []).find(it => it.type === 'BOOKING_FEE');",
+                  "pm.test('has BOOKING_FEE', () => pm.expect(fee).to.exist);",
+                  "pm.test('total = 5000', () => pm.expect(j.total.amount).to.eql('5000'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}/invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}", "invoice"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Manual Until Blocked (overdue + driver block)",
+      "description": "MANUAL invoice tidak dibayar dalam grace period (default 15m, override `BILLING_OVERDUE_GRACE=30s` untuk demo). Worker mark invoice OVERDUE → driver di-block dari booking baru.\n\nUrutan: Create MANUAL → Check-in/Out → Skip pay → Wait grace → Verify OVERDUE → Try book #2 (rejected).",
+      "item": [
+        {
+          "name": "Create MANUAL Reservation",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.variables.set('idempotency_key', 'block-1-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.environment.set('reservation_id', j.reservation.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B2222BLK\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"MANUAL\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Check-in & Check-out (skip payment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Run :checkin lalu :checkout via Runner manual",
+                  "console.log('TIP: Use folder 02 Check-in + Check-out as standalone, atau jalankan SQL UPDATE state langsung');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkout"]
+            }
+          }
+        },
+        {
+          "name": "Get Overdue Count (after grace)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "console.log('Overdue count:', j.count);",
+                  "pm.test('overdue >= 1', () => pm.expect(parseInt(j.count, 10)).to.be.at.least(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/drivers/{{driver_id}}/overdue-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "drivers", "{{driver_id}}", "overdue-count"]
+            }
+          }
+        },
+        {
+          "name": "Try Book Again (expect 403/409 — blocked)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.variables.set('idempotency_key', 'block-2-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('rejected (4xx)', () => pm.expect(pm.response.code).to.be.within(400, 499));",
+                  "console.log('Body:', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B3333BLK\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — Idempotency",
+      "description": "Same Idempotency-Key dikirim 2× → response identik (sama reservation_id). Stripe-style server-side dedup.",
+      "item": [
+        {
+          "name": "Set fixed idempotency key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const k = 'idem-fixed-' + Date.now();",
+                  "pm.environment.set('idem_fixed', k);",
+                  "console.log('Fixed idempotency key:', k);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": ["{{baseUrl}}"],
+              "path": ["healthz"]
+            }
+          }
+        },
+        {
+          "name": "Create Reservation #1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.environment.set('idem_first_id', j.reservation.id);",
+                  "console.log('First reservation:', j.reservation.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idem_fixed}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B5555IDM\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Create Reservation #2 (same key — expect identical)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const first = pm.environment.get('idem_first_id');",
+                  "pm.test('same reservation_id (dedup)', () => pm.expect(j.reservation.id).to.eql(first));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idem_fixed}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B5555IDM\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 — One Driver, One Active Reservation (RES-031)",
+      "description": "Driver A bikin reservation #1 (CONFIRMED). Belum check-out. Coba booking #2 → reject dengan error driver_has_active_reservation. Setelah cancel atau check-out baru bisa book lagi.",
+      "item": [
+        {
+          "name": "Create Reservation #1",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.variables.set('idempotency_key', 'one-1-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('reservation_id', j.reservation.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B0001ACT\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Create Reservation #2 (expect REJECT)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.variables.set('idempotency_key', 'one-2-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('rejected (4xx)', () => pm.expect(pm.response.code).to.be.within(400, 499));",
+                  "console.log('Body:', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B0002ACT\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 — User-Selected Spot Mode",
+      "description": "Driver list spots per lantai (filter floor + vehicle_type), pilih spesifik, kirim CreateReservation dengan mode=USER + spot_id.",
+      "item": [
+        {
+          "name": "List Spots (Floor 1, CAR, AVAILABLE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('has floors[]', () => pm.expect(j.floors).to.be.an('array').that.is.not.empty);",
+                  "const firstSpot = j.floors[0].spots[0];",
+                  "if (firstSpot) {",
+                  "  pm.environment.set('user_spot_id', firstSpot.id);",
+                  "  console.log('Picked spot:', firstSpot.code, firstSpot.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/spots?floor_level=1&vehicle_type=CAR&status=AVAILABLE",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "spots"],
+              "query": [
+                { "key": "floor_level", "value": "1" },
+                { "key": "vehicle_type", "value": "CAR" },
+                { "key": "status", "value": "AVAILABLE" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Reservation (mode=USER + spot_id)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.variables.set('idempotency_key', 'user-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('assignment_mode USER', () => pm.expect(j.reservation.assignment_mode).to.eql('USER'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"plate_no\": \"B7777USR\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"USER\",\n  \"spot_id\": \"{{user_spot_id}}\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 — Concurrent Booking (race condition)",
+      "description": "**TIDAK bisa demo 100% via Postman tunggal** — perlu eksekusi paralel. Ada 2 cara:\n\n**Cara A — Postman Collection Runner** dengan `Iterations=2` dan `Delay=0` di endpoint ini, lihat 1 sukses + 1 gagal.\n\n**Cara B — bash one-liner (paling reliable):**\n```bash\nfor i in 1 2 3 4 5; do\n  curl -X POST http://localhost:8080/v1/reservations \\\n    -H 'Content-Type: application/json' \\\n    -H \"Idempotency-Key: race-$i-$(date +%s%N)\" \\\n    -d '{\"driver_id\":\"d-'$i'\",\"plate_no\":\"B'$i'\",\"vehicle_type\":\"CAR\",\"mode\":\"USER\",\"spot_id\":\"<SPOT>\",\"payment_mode\":\"AUTO\"}' &\ndone\nwait\n```\nHanya 1 yang return 200, sisanya 409.",
+      "item": [
+        {
+          "name": "Create (race candidate — run with iterations≥2)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Distinct idempotency key per iteration",
+                  "pm.variables.set('idempotency_key', 'race-' + pm.info.iteration + '-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const code = pm.response.code;",
+                  "console.log('Iter', pm.info.iteration, '→', code, pm.response.text().substring(0, 100));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"driver-race-{{$randomUUID}}\",\n  \"plate_no\": \"B-RACE\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"USER\",\n  \"spot_id\": \"{{user_spot_id}}\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 — Rate Limit Burst",
+      "description": "Heavy tier (POST /v1/reservations) default 5 RPS, burst 10. Run via Collection Runner dengan `Iterations=15` `Delay=0` — yang ke-11+ kena 429 Retry-After.",
+      "item": [
+        {
+          "name": "Burst Create (run iterations=15)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.variables.set('idempotency_key', 'burst-' + pm.info.iteration + '-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const code = pm.response.code;",
+                  "const remaining = pm.response.headers.get('X-RateLimit-Remaining');",
+                  "const retryAfter = pm.response.headers.get('Retry-After');",
+                  "console.log('Iter', pm.info.iteration, '→', code, '| remaining=', remaining, '| retry-after=', retryAfter);",
+                  "if (pm.info.iteration >= 11) {",
+                  "  pm.test('iter ' + pm.info.iteration + ' should be 429', () => pm.expect(code).to.eql(429));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"d-burst-{{$randomUUID}}\",\n  \"plate_no\": \"B-BURST\",\n  \"vehicle_type\": \"CAR\",\n  \"mode\": \"SYSTEM\",\n  \"payment_mode\": \"AUTO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 — Health & Readiness",
+      "description": "Probe gateway + lihat dependency status di /readyz response JSON.",
+      "item": [
+        {
+          "name": "Healthz (gateway)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": ["{{baseUrl}}"],
+              "path": ["healthz"]
+            }
+          }
+        },
+        {
+          "name": "Readyz (gateway — full dep check)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "console.log('Status:', pm.response.code);",
+                  "try { console.log(JSON.stringify(pm.response.json(), null, 2)); } catch(e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readyz",
+              "host": ["{{baseUrl}}"],
+              "path": ["readyz"]
+            }
+          }
+        },
+        {
+          "name": "Readyz Reservation (direct, port 9191)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:9191/readyz",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "9191",
+              "path": ["readyz"]
+            }
+          }
+        },
+        {
+          "name": "Readyz Billing (direct, port 9192)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:9192/readyz",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "9192",
+              "path": ["readyz"]
+            }
+          }
+        },
+        {
+          "name": "Readyz Payment (direct, port 9193)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:9193/readyz",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "9193",
+              "path": ["readyz"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 — Webhook Simulation (Midtrans)",
+      "description": "Simulasi push notification Midtrans untuk MANUAL invoice → status payment SUCCESS, invoice PAID.\n\n**Mode test:**\n- Mock mode (`PAYMENT_MOCK_MODE=true`): signature TIDAK di-verify, body apa saja diterima.\n- Live mode: signature SHA-512 dari `order_id+status_code+gross_amount+server_key`. Lihat README untuk generate.",
+      "item": [
+        {
+          "name": "Notification — settled (mock mode)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "console.log('Status:', pm.response.code, pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Midtrans-Signature", "value": "mock-signature-ignored-in-mock-mode" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{payment_id}}\",\n  \"transaction_status\": \"settlement\",\n  \"status_code\": \"200\",\n  \"gross_amount\": \"5000.00\",\n  \"transaction_id\": \"midtrans-mock-{{$timestamp}}\",\n  \"payment_type\": \"qris\",\n  \"signature_key\": \"mock\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/payments/midtrans/notification",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "payments", "midtrans", "notification"]
+            }
+          }
+        },
+        {
+          "name": "Notification — invalid signature (live mode → 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Hanya valid kalau PAYMENT_MOCK_MODE=false. Mock mode bakal 200.",
+                  "console.log('Status:', pm.response.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Midtrans-Signature", "value": "deliberately-wrong-signature" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"tampered\",\n  \"transaction_status\": \"settlement\",\n  \"status_code\": \"200\",\n  \"gross_amount\": \"5000.00\",\n  \"signature_key\": \"deliberately-wrong-signature\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/payments/midtrans/notification",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "payments", "midtrans", "notification"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 — Reference (per-resource)",
+      "description": "Single requests untuk explore API tanpa run scenario flow.",
+      "item": [
+        {
+          "name": "Availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/availability", "host": ["{{baseUrl}}"], "path": ["v1", "availability"] }
+          }
+        },
+        {
+          "name": "List Spots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/spots?floor_level=1&vehicle_type=CAR&status=AVAILABLE",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "spots"],
+              "query": [
+                { "key": "floor_level", "value": "1" },
+                { "key": "vehicle_type", "value": "CAR" },
+                { "key": "status", "value": "AVAILABLE" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Reservation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/invoices/{{invoice_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "invoices", "{{invoice_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Issue Invoice (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reservation_id\": \"{{reservation_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/invoices:issue",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "invoices:issue"]
+            }
+          }
+        },
+        {
+          "name": "Mark Paid (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"{{payment_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/invoices/{{invoice_id}}:mark-paid",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "invoices", "{{invoice_id}}:mark-paid"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/payments/{{payment_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "payments", "{{payment_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Overdue Count by Driver",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/drivers/{{driver_id}}/overdue-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "drivers", "{{driver_id}}", "overdue-count"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -94,7 +94,7 @@ flowchart TB
       NOT[notification]
     end
 
-    subgraph Deferred[Designed-only — ADR-0009]
+    subgraph Deferred[Designed-only - ADR-0009]
       SRC[search<br/>📐 proto only]
       PRE[presence<br/>📐 proto only]
     end
@@ -454,7 +454,7 @@ erDiagram
     }
 ```
 
-DDL lengkap ada di [`migrations/`](migrations/).
+DDL lengkap ada di [`deploy/migrations/`](deploy/migrations/).
 
 ---
 

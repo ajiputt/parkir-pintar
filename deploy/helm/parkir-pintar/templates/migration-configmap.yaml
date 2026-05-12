@@ -4,16 +4,17 @@ ConfigMap dengan migration SQL files, di-mount oleh migration Job.
 Pre-install/pre-upgrade hook supaya di-create SEBELUM migration Job.
 Hook-weight -10 supaya prioritas tertinggi (ConfigMap dulu, lalu Job).
 
-Folder structure (mirror dari root migrations/):
+Folder structure (mirror dari deploy/migrations/):
   reservation/001_init.up.sql, 001_init.down.sql, 002_*.up.sql, dst.
   billing/001_init.up.sql, dst.
   payment/001_init.up.sql
   notification/001_init.up.sql
 
-NOTE: Migrations files duplicated dari root migrations/ ke
-deploy/helm/parkir-pintar/migrations/ supaya Helm .Files.Glob bisa baca.
-Sync via: cp -r migrations/* deploy/helm/parkir-pintar/migrations/
-Atau jalanin `make helm-sync-migrations` (kalau Makefile target ada).
+NOTE: Source of truth ada di deploy/migrations/. Chart dir
+(deploy/helm/parkir-pintar/migrations/) adalah transient copy yang
+di-gitignore. Sync via:
+  - Local:   `make helm-sync-migrations`
+  - CD:      step "Sync migrations ke Helm chart dir" di deploy-eks.yml
 */}}
 {{- if .Values.migration.enabled }}
 apiVersion: v1
