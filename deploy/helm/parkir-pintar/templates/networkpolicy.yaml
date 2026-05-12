@@ -30,10 +30,26 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/part-of: parkir-pintar
-    - to: []     # external (DB, Redis, NATS, Midtrans). Restrict via CIDR di prod.
+    # DNS resolution - HARUS allow port 53 untuk resolve service name
+    # (nats.parkir-system.svc.cluster.local dll). Tanpa ini, semua
+    # cross-namespace service lookup gagal.
+    - to: []
       ports:
-        - port: 5432
-        - port: 6379
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # NATS cross-namespace (parkir-system) - allow egress ke pod NATS langsung
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: parkir-system
+      ports:
         - port: 4222
-        - port: 443
+    # External (RDS, ElastiCache Redis, Midtrans API). Restrict via CIDR di prod.
+    - to: []
+      ports:
+        - port: 5432   # Postgres RDS
+        - port: 6379   # Redis ElastiCache
+        - port: 443    # HTTPS (Midtrans, SES, etc)
 {{- end }}

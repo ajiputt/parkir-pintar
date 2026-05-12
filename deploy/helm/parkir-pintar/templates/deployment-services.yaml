@@ -77,6 +77,13 @@ spec:
                   key: {{ $svc.midtrans.serverKeySecretKey }}
                   optional: true
             {{- end }}
+            {{- if eq $name "notification" }}
+            # Templates di-COPY ke /templates di Dockerfile distroless image.
+            # Override default path "services/notification/templates" yang gak
+            # exist di runtime container.
+            - name: NOTIFICATION_TEMPLATE_DIR
+              value: /templates
+            {{- end }}
           resources:
             {{- toYaml $svc.resources | nindent 12 }}
           readinessProbe:
