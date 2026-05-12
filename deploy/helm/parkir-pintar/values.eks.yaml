@@ -19,7 +19,9 @@ global:
   imagePullPolicy: IfNotPresent
   imageTag: latest
   env: staging
-  domain: api.parkirpintar.example.com
+  # Demo: empty supaya Ingress match all hosts (ALB DNS).
+  # Production: set ke api.parkirpintar.example.com setelah DNS + ACM cert siap.
+  domain: ""
   storageClass: gp3
 
   # EKS-specific feature flag — enable IRSA annotation di ServiceAccount.
@@ -63,22 +65,22 @@ services:
     iamRoleArn: arn:aws:iam::123456789012:role/ajipur-parkir-notification   # SES + SecretsManager
 
 # ---- Ingress: AWS Load Balancer Controller (ALB) ----
+# Demo: HTTP-only di ALB. Production: tambahin ACM cert ARN + HTTPS listener.
+# Override via --set di deploy workflow kalau cert sudah ready.
 ingress:
   enabled: true
   className: alb
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: '443'
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-3:123456789012:certificate/xxx-yyy-zzz
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
     alb.ingress.kubernetes.io/healthcheck-path: /healthz
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
     alb.ingress.kubernetes.io/group.name: parkir
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=60
   tls:
-    enabled: true   # TLS terminated di ALB via ACM cert (lihat annotations di atas)
+    enabled: false  # Demo: HTTP only. Production: enable + override cert-arn annotation.
 
 # ---- External dependencies (managed services) ----
 postgres:

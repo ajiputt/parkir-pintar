@@ -353,6 +353,21 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
 Write-Ok "ALB Controller installed"
 
 # ============================================================================
+# 8.5. Set default StorageClass untuk PVC (NATS JetStream butuh)
+# ============================================================================
+# EBS CSI Driver addon bikin gp2 StorageClass otomatis tapi gak set sebagai
+# default. PVC tanpa explicit storageClassName akan Pending forever.
+# Set gp2 sebagai default supaya NATS PVC auto-bind.
+Write-Step "Set default StorageClass"
+
+kubectl annotate sc gp2 storageclass.kubernetes.io/is-default-class=true --overwrite 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Ok "gp2 set sebagai default StorageClass"
+} else {
+    Write-Warn "gp2 StorageClass gak ada. Cek 'kubectl get sc' manual."
+}
+
+# ============================================================================
 # 9. Install Helm: External Secrets Operator
 # ============================================================================
 Write-Step "Install External Secrets Operator"

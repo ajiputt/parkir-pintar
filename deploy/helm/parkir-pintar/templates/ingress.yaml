@@ -13,7 +13,10 @@ spec:
       secretName: parkir-tls
   {{- end }}
   rules:
-    - host: {{ .Values.global.domain }}
+    -
+      {{- if .Values.global.domain }}
+      host: {{ .Values.global.domain }}
+      {{- end }}
       http:
         paths:
           - path: /
