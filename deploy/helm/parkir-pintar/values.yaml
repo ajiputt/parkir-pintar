@@ -43,6 +43,7 @@ services:
   billing:
     enabled: true
     replicas: 2
+    grpcPort: 9092
     httpPort: 9192
     resources:
       requests: { cpu: 100m, memory: 128Mi }
@@ -51,6 +52,7 @@ services:
   payment:
     enabled: true
     replicas: 2
+    grpcPort: 9093
     httpPort: 9193
     midtrans:
       mockMode: false

@@ -32,6 +32,15 @@ spec:
             {{- include "parkir.commonEnv" . | nindent 12 }}
             - name: GATEWAY_HTTP_PORT
               value: ":{{ .Values.services.gateway.port }}"
+            # gRPC dial address ke backend service (K8s service DNS).
+            # Default di code = localhost:9091 dst, harus di-override di K8s.
+            - name: RESERVATION_GRPC_ADDR_DIAL
+              value: "reservation:{{ .Values.services.reservation.grpcPort }}"
+            - name: BILLING_GRPC_ADDR_DIAL
+              value: "billing:{{ .Values.services.billing.grpcPort | default 9092 }}"
+            - name: PAYMENT_GRPC_ADDR_DIAL
+              value: "payment:{{ .Values.services.payment.grpcPort | default 9093 }}"
+            # HTTP URL untuk legacy code path (kalau ada).
             - name: RESERVATION_HTTP_URL
               value: "http://reservation:{{ .Values.services.reservation.httpPort }}"
             - name: BILLING_HTTP_URL

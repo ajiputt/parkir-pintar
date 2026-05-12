@@ -65,11 +65,22 @@ spec:
             - name: RESERVATION_EXPIRY_SCAN_INTERVAL
               value: {{ $svc.expiryScanInterval | quote }}
             {{- end }}
+            {{- if eq $name "billing" }}
+            - name: BILLING_GRPC_ADDR
+              value: ":{{ $svc.grpcPort }}"
+            - name: BILLING_HTTP_ADDR
+              value: ":{{ $svc.httpPort }}"
+            {{- end }}
             {{- if eq $name "payment" }}
+            - name: PAYMENT_GRPC_ADDR
+              value: ":{{ $svc.grpcPort }}"
             - name: PAYMENT_HTTP_ADDR
               value: ":{{ $svc.httpPort }}"
             - name: PAYMENT_MOCK_MODE
               value: {{ $svc.midtrans.mockMode | quote }}
+            # Payment service call billing via gRPC (cross-service blocking check)
+            - name: BILLING_GRPC_ADDR
+              value: "billing:{{ $.Values.services.billing.grpcPort }}"
             - name: MIDTRANS_SERVER_KEY
               valueFrom:
                 secretKeyRef:
