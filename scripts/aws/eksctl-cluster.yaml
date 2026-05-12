@@ -64,7 +64,11 @@ iam:
               - "arn:aws:secretsmanager:ap-southeast-3:*:secret:ajipur-parkir-pintar/*"
       roleName: ajipur-parkir-external-secrets-role
 
-    # Notification service IRSA — SES SendEmail
+    # Notification service IRSA - SES SendEmail
+    # roleOnly: true supaya eksctl HANYA bikin IAM role, gak bikin K8s SA.
+    # SA-nya akan dibuat oleh Helm chart parkir-pintar (templates/serviceaccount.yaml)
+    # dengan IRSA annotation pointing ke role ini. Mencegah label conflict
+    # antara eksctl ("managed-by: eksctl") dan Helm ("managed-by: Helm").
     - metadata:
         name: notification
         namespace: parkir
@@ -77,6 +81,7 @@ iam:
               - ses:SendRawEmail
             Resource: "*"
       roleName: ajipur-parkir-notification-role
+      roleOnly: true
 
 # ---- Managed Node Group ----
 # EC2 Spot untuk demo (cost 70% lebih murah).

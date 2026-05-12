@@ -1,5 +1,5 @@
-# ============================================================================
-# ParkirPintar — AWS Teardown Script (Skenario A end-of-day cleanup)
+﻿# ============================================================================
+# ParkirPintar - AWS Teardown Script (Skenario A end-of-day cleanup)
 # ============================================================================
 # Jalanin di local laptop sore untuk delete semua resource.
 # Aji wajib jalanin ini supaya cost stop. Lupa = $5+/hari kelarung idle.
@@ -66,7 +66,7 @@ if ($confirm -ne "yes") {
 }
 
 # ============================================================================
-# 1. Helm uninstall (urutan: app → ESO → NATS → ALB Controller)
+# 1. Helm uninstall (urutan: app -> ESO -> NATS -> ALB Controller)
 # ============================================================================
 Write-Step "Uninstall Helm releases"
 
@@ -78,15 +78,17 @@ helm uninstall nats -n parkir-system 2>$null
 helm uninstall external-secrets -n external-secrets 2>$null
 helm uninstall aws-load-balancer-controller -n kube-system 2>$null
 
-# Delete namespace
-kubectl delete namespace parkir 2>$null
-kubectl delete namespace parkir-system 2>$null
-kubectl delete namespace external-secrets 2>$null
+# Delete namespace - non-blocking + short timeout supaya gak stuck di finalizers.
+# eksctl delete cluster di step 6 nanti bakal nuke seluruh control plane,
+# jadi namespace residual gak masalah.
+kubectl delete namespace parkir --wait=false --timeout=10s 2>$null
+kubectl delete namespace parkir-system --wait=false --timeout=10s 2>$null
+kubectl delete namespace external-secrets --wait=false --timeout=10s 2>$null
 
 Write-Ok "Helm uninstall done"
 
 # ============================================================================
-# 2. Delete RDS (skip final snapshot — throwaway demo)
+# 2. Delete RDS (skip final snapshot - throwaway demo)
 # ============================================================================
 Write-Step "Delete RDS '$DB_INSTANCE_ID'"
 
@@ -152,7 +154,7 @@ if ($redis_sg -and $redis_sg -ne "None") {
 }
 
 # ============================================================================
-# 6. Delete EKS cluster (terakhir — supaya VPC bisa di-delete eksctl)
+# 6. Delete EKS cluster (terakhir - supaya VPC bisa di-delete eksctl)
 # ============================================================================
 Write-Step "Delete EKS cluster '$CLUSTER_NAME' (estimasi 8-10 menit)"
 
@@ -160,7 +162,7 @@ eksctl delete cluster --name $CLUSTER_NAME --region $AWS_REGION --wait
 if ($LASTEXITCODE -eq 0) {
     Write-Ok "EKS cluster deleted (VPC + subnet + NAT + SG auto-cleaned by eksctl)"
 } else {
-    Write-Warn "eksctl delete partial — cek manual di Console kalau ada orphan resource"
+    Write-Warn "eksctl delete partial - cek manual di Console kalau ada orphan resource"
 }
 
 # ============================================================================
@@ -195,8 +197,4 @@ Write-Host "  Cost stop. Bisa wake lagi besok pagi via:" -ForegroundColor Yellow
 Write-Host "    .\scripts\aws\wake.ps1"
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "VERIFY MANUAL (recommended):" -ForegroundColor Cyan
-Write-Host "  aws ec2 describe-instances --region $AWS_REGION ``"
-Write-Host "    --query 'Reservations[].Instances[?State.Name==``running``].InstanceId'"
-Write-Host "  -> Output kosong = no instance running = 100% clean"
-Write-Host ""
+Write-Host "VERIFY MANUAL (recommended):" -

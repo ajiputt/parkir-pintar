@@ -1,5 +1,5 @@
-# ============================================================================
-# ParkirPintar — AWS Wake Script (Skenario A daily provision)
+﻿# ============================================================================
+# ParkirPintar - AWS Wake Script (Skenario A daily provision)
 # ============================================================================
 # Jalanin di local laptop pagi-pagi untuk provision full infrastructure.
 #
@@ -29,6 +29,7 @@ $CLUSTER_NAME     = "ajipur-parkir-staging"
 $DB_INSTANCE_ID   = "ajipur-parkir-rds"
 $REDIS_CLUSTER_ID = "ajipur-parkir-redis"
 $SECRET_PREFIX    = "ajipur-parkir-pintar"
+$DEPLOY_ROLE_NAME = "AjipurParkirPintarGitHubActionsDeployRole"  # role yang dipakai workflow OIDC
 $REPO_ROOT        = (Get-Item $PSScriptRoot).Parent.Parent.FullName
 
 # ---- Helpers ----
@@ -108,6 +109,31 @@ if ($clusterExists) {
 aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
 Write-Ok "kubeconfig updated"
 
+# ----------------------------------------------------------------------------
+# Grant cluster admin ke GitHub Actions deploy role via EKS Access Entry
+# ----------------------------------------------------------------------------
+# eksctl bikin cluster pakai IAM identity Aji (laptop) yang auto jadi cluster admin.
+# Tapi GitHub Actions pakai role beda (OIDC) -> harus di-grant terpisah supaya
+# CD pipeline bisa kubectl ke API server.
+# Idempotent: kalau access entry sudah ada, aws CLI return error tapi continue.
+Write-Step "Grant EKS access entry ke GitHubActionsDeployRole"
+
+$deployRoleArn = "arn:aws:iam::${ACCOUNT_ID}:role/${DEPLOY_ROLE_NAME}"
+
+aws eks create-access-entry `
+    --cluster-name $CLUSTER_NAME `
+    --principal-arn $deployRoleArn `
+    --region $AWS_REGION 2>$null | Out-Null
+
+aws eks associate-access-policy `
+    --cluster-name $CLUSTER_NAME `
+    --principal-arn $deployRoleArn `
+    --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" `
+    --access-scope type=cluster `
+    --region $AWS_REGION 2>$null | Out-Null
+
+Write-Ok "Access entry granted ke $DEPLOY_ROLE_NAME (cluster admin)"
+
 # ============================================================================
 # 3. Get VPC + subnet IDs untuk RDS/Redis (di-create eksctl)
 # ============================================================================
@@ -171,7 +197,7 @@ if ($RDS_SG) {
     Write-Warn "RDS SG sudah ada, pakai existing: $RDS_SG"
 }
 
-# Create RDS instance (async — return langsung, instance create di background)
+# Create RDS instance (async - return langsung, instance create di background)
 aws rds describe-db-instances --db-instance-identifier $DB_INSTANCE_ID --region $AWS_REGION 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Warn "RDS '$DB_INSTANCE_ID' sudah ada. Skip create."
@@ -370,7 +396,7 @@ if (-not $crdReady) {
 }
 
 # ============================================================================
-# 12. DB migration — handled by Helm pre-install/pre-upgrade Job
+# 12. DB migration - handled by Helm pre-install/pre-upgrade Job
 # ============================================================================
 Write-Step "DB migration"
 

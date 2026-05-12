@@ -144,6 +144,7 @@ jobs:
             --set global.imageTag=${{ steps.tag.outputs.tag }} \
             --set global.eks.accountId=${{ steps.account.outputs.id }} \
             --set global.env=${{ github.event.inputs.environment }} \
+            --set services.notification.iamRoleArn=arn:aws:iam::${{ steps.account.outputs.id }}:role/ajipur-parkir-notification-role \
             --dry-run --debug | tee /tmp/helm-plan.yaml
 
       - name: Upload dry-run output
@@ -152,6 +153,16 @@ jobs:
         with:
           name: helm-plan-${{ steps.tag.outputs.tag }}
           path: /tmp/helm-plan.yaml
+
+      # ----- Pre-cleanup eksctl-managed SAs di namespace parkir -----
+      # eksctl versi lama (sebelum roleOnly: true) bikin K8s SA yang collide
+      # dengan SA dari Helm chart parkir-pintar. Cleanup defensif supaya
+      # helm install bisa create SA fresh dengan label managed-by: Helm.
+      - name: Pre-cleanup eksctl-managed ServiceAccounts (idempotent)
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          kubectl create namespace parkir --dry-run=client -o yaml | kubectl apply -f -
+          kubectl delete sa notification -n parkir --ignore-not-found
 
       # ----- Apply ExternalSecret (sync Secrets Manager → K8s Secret) -----
       - name: Apply ExternalSecret manifest
@@ -180,6 +191,7 @@ jobs:
             --set global.imageTag=${{ steps.tag.outputs.tag }} \
             --set global.eks.accountId=${{ steps.account.outputs.id }} \
             --set global.env=${{ github.event.inputs.environment }} \
+            --set services.notification.iamRoleArn=arn:aws:iam::${{ steps.account.outputs.id }}:role/ajipur-parkir-notification-role \
             --atomic --timeout 10m
 
       # ----- Wait rollout per service -----
