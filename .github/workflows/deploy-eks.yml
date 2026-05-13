@@ -41,7 +41,7 @@ env:
   ECR_PREFIX: ajipur-parkir-pintar
   CLUSTER_NAME: ajipur-parkir-staging
   HELM_VERSION: v3.15.0
-  KUBECTL_VERSION: v1.30.0
+  KUBECTL_VERSION: v1.34.0   # match EKS cluster version di eksctl-cluster.yaml
 
 jobs:
   deploy:

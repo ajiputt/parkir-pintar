@@ -17,7 +17,11 @@ kind: ClusterConfig
 metadata:
   name: ajipur-parkir-staging
   region: ap-southeast-3
-  version: "1.30"
+  # Upgrade dari 1.30 (extended support, lebih mahal $0.60/jam).
+  # Versi tersedia per Mei 2026: 1.29 - 1.35.
+  # Pakai 1.34 (N-1 dari latest 1.35) - balance stability + features.
+  # Pakai 1.35 kalau mau bleeding edge.
+  version: "1.34"
   tags:
     Project: parkir-pintar
     Environment: staging

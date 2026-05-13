@@ -73,10 +73,32 @@ Write-Step "Uninstall Helm releases"
 # Update kubeconfig (mungkin udah expired)
 aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION 2>$null
 
+# PENTING: Delete Ingress DULU supaya ALB Controller bisa hapus ALB di AWS
+# sebelum dirinya sendiri di-uninstall. Tanpa ini, ALB orphan -> VPC gak
+# bisa dihapus -> eksctl delete cluster stuck di deadline.
+Write-Host "Delete Ingress (trigger ALB Controller hapus ALB di AWS)..."
+kubectl delete ingress --all -n parkir --timeout=60s 2>$null
+# Tunggu ALB Controller selesai delete ALB di AWS (~30-60 detik)
+Start-Sleep -Seconds 30
+
 helm uninstall parkir-pintar -n parkir 2>$null
 helm uninstall nats -n parkir-system 2>$null
 helm uninstall external-secrets -n external-secrets 2>$null
 helm uninstall aws-load-balancer-controller -n kube-system 2>$null
+
+# Defensive: cek + delete orphan ALB kalau ada (kalau ALB Controller
+# udah ke-uninstall tapi ALB masih nyangkut, manual delete)
+$orphanAlb = aws elbv2 describe-load-balancers `
+    --region $AWS_REGION `
+    --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-parkir')].LoadBalancerArn" `
+    --output text 2>$null
+if ($orphanAlb) {
+    foreach ($arn in $orphanAlb.Split("`t")) {
+        Write-Warn "Orphan ALB ditemukan, force delete: $arn"
+        aws elbv2 delete-load-balancer --load-balancer-arn $arn --region $AWS_REGION 2>$null
+    }
+    Start-Sleep -Seconds 30
+}
 
 # Delete namespace - non-blocking + short timeout supaya gak stuck di finalizers.
 # eksctl delete cluster di step 6 nanti bakal nuke seluruh control plane,
@@ -158,11 +180,62 @@ if ($redis_sg -and $redis_sg -ne "None") {
 # ============================================================================
 Write-Step "Delete EKS cluster '$CLUSTER_NAME' (estimasi 8-10 menit)"
 
-eksctl delete cluster --name $CLUSTER_NAME --region $AWS_REGION --wait
+eksctl delete cluster --name $CLUSTER_NAME --region $AWS_REGION --wait --force
 if ($LASTEXITCODE -eq 0) {
     Write-Ok "EKS cluster deleted (VPC + subnet + NAT + SG auto-cleaned by eksctl)"
 } else {
-    Write-Warn "eksctl delete partial - cek manual di Console kalau ada orphan resource"
+    Write-Warn "eksctl delete partial - manual cleanup orphan CF stacks"
+}
+
+# Verify CF stacks fully gone (eksctl kadang bilang sukses padahal stack masih
+# stuck di DELETE_FAILED). Hapus orphan supaya next wake gak AlreadyExists.
+Write-Step "Cleanup orphan CloudFormation stacks"
+$orphans = aws cloudformation list-stacks `
+    --region $AWS_REGION `
+    --stack-status-filter CREATE_COMPLETE CREATE_FAILED ROLLBACK_COMPLETE UPDATE_COMPLETE DELETE_FAILED UPDATE_ROLLBACK_COMPLETE `
+    --query "StackSummaries[?contains(StackName, 'eksctl-$CLUSTER_NAME')].StackName" `
+    --output text 2>$null
+
+if ($orphans) {
+    # Disable termination protection di semua stack
+    foreach ($stack in $orphans.Split("`t")) {
+        aws cloudformation update-termination-protection `
+            --stack-name $stack --no-enable-termination-protection `
+            --region $AWS_REGION 2>$null | Out-Null
+    }
+
+    # Order: nodegroup -> addon -> cluster (cluster export di-reference nodegroup)
+    $nodegroups = @($orphans.Split("`t") | Where-Object { $_ -like "*nodegroup*" })
+    $addons     = @($orphans.Split("`t") | Where-Object { $_ -like "*addon*" })
+    $cluster    = @($orphans.Split("`t") | Where-Object { $_ -like "*-cluster" })
+
+    foreach ($s in $nodegroups) {
+        Write-Host "  -> Delete nodegroup: $s"
+        aws cloudformation delete-stack --stack-name $s --region $AWS_REGION 2>$null
+    }
+    foreach ($s in $nodegroups) {
+        aws cloudformation wait stack-delete-complete --stack-name $s --region $AWS_REGION 2>$null
+    }
+
+    foreach ($s in $addons) {
+        Write-Host "  -> Delete addon: $s"
+        aws cloudformation delete-stack --stack-name $s --region $AWS_REGION 2>$null
+    }
+    foreach ($s in $addons) {
+        aws cloudformation wait stack-delete-complete --stack-name $s --region $AWS_REGION 2>$null
+    }
+
+    foreach ($s in $cluster) {
+        Write-Host "  -> Delete cluster: $s"
+        aws cloudformation delete-stack --stack-name $s --region $AWS_REGION 2>$null
+    }
+    foreach ($s in $cluster) {
+        aws cloudformation wait stack-delete-complete --stack-name $s --region $AWS_REGION 2>$null
+    }
+
+    Write-Ok "Orphan stacks cleaned (order: nodegroup -> addon -> cluster)"
+} else {
+    Write-Ok "No orphan CF stacks"
 }
 
 # ============================================================================
