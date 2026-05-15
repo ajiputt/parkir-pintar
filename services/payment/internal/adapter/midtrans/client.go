@@ -35,6 +35,7 @@ type ChargeResponse struct {
 	StatusCode    string
 	StatusMessage string
 	QRString      string
+	QRURL         string // dari actions[].url where name == "generate-qr-code"
 	ExpiryTime    time.Time
 	RawResponse   []byte
 }
@@ -95,12 +96,24 @@ func (c *Client) Charge(ctx context.Context, req ChargeRequest) (*ChargeResponse
 		return nil, err
 	}
 	exp, _ := time.Parse("2006-01-02 15:04:05", out.ExpiryTime)
+
+	// Extract QR image URL dari actions[]. Midtrans returns multiple actions
+	// (generate-qr-code, deeplink, dll). Pilih yang name == "generate-qr-code".
+	var qrURL string
+	for _, act := range out.Actions {
+		if act.Name == "generate-qr-code" {
+			qrURL = act.URL
+			break
+		}
+	}
+
 	return &ChargeResponse{
 		TransactionID: out.TransactionID,
 		OrderID:       out.OrderID,
 		StatusCode:    out.StatusCode,
 		StatusMessage: out.StatusMessage,
 		QRString:      out.QRString,
+		QRURL:         qrURL,
 		ExpiryTime:    exp,
 		RawResponse:   raw,
 	}, nil
@@ -113,6 +126,7 @@ func (c *Client) mockCharge(req ChargeRequest) (*ChargeResponse, error) {
 		StatusCode:    "201",
 		StatusMessage: "QRIS transaction is created",
 		QRString:      fmt.Sprintf("00020101021126670016COM.MOCK.MIDTRANS.WWW0118MOCK%s5204594753033605802ID5907MOCKQRS6011JAKARTA62120708MOCKMOCK6304XXXX", req.OrderID),
+		QRURL:         fmt.Sprintf("https://api.sandbox.midtrans.com/v2/qris/MOCK-%s/qr-code", req.OrderID),
 		ExpiryTime:    time.Now().Add(15 * time.Minute),
 		RawResponse:   []byte(`{"mocked":true}`),
 	}, nil

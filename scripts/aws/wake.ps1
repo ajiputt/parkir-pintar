@@ -397,12 +397,18 @@ helm repo update 2>$null
 
 kubectl create namespace parkir-system 2>$null
 
+# JetStream MemoryStore (no PVC) supaya sleep/resume gak nemu issue
+# EBS volume cross-AZ. Trade-off: state hilang saat pod restart.
+# Aman untuk demo karena event ephemeral + idempotency handle replay.
+# Production: ganti ke fileStore + topology-pinned StorageClass.
 helm upgrade --install nats nats/nats `
     --namespace parkir-system `
     --set config.jetstream.enabled=true `
-    --set config.jetstream.fileStore.pvc.size=1Gi `
+    --set config.jetstream.fileStore.enabled=false `
+    --set config.jetstream.memoryStore.enabled=true `
+    --set config.jetstream.memoryStore.maxSize=128Mi `
     --wait
-Write-Ok "NATS installed"
+Write-Ok "NATS installed (JetStream MemoryStore - no PVC, sleep/resume safe)"
 
 # ============================================================================
 # 11. Wait ESO CRDs ready, lalu Apply External Secret manifest

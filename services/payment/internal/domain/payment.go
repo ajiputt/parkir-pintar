@@ -30,6 +30,7 @@ type Payment struct {
 	Gateway        string
 	GatewayRef     string
 	QRString       string
+	QRURL          string // Midtrans actions[generate-qr-code].url - public image URL
 	Amount         money.Money
 	Status         Status
 	IdempotencyKey string

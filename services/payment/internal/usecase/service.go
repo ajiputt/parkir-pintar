@@ -105,6 +105,7 @@ func (s *Service) CreatePayment(ctx context.Context, in CreatePaymentInput) (*do
 	}
 	p.GatewayRef = resp.TransactionID
 	p.QRString = resp.QRString
+	p.QRURL = resp.QRURL
 	if !resp.ExpiryTime.IsZero() {
 		exp := resp.ExpiryTime
 		p.ExpiresAt = &exp

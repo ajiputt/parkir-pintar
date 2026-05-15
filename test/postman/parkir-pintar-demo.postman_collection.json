@@ -342,8 +342,11 @@
                   "const j = pm.response.json();",
                   "pm.test('status PENDING', () => pm.expect(j.status).to.eql('PENDING'));",
                   "pm.test('has qr_string', () => pm.expect(j.qr_string).to.be.a('string'));",
+                  "pm.test('has qr_url', () => pm.expect(j.qr_url).to.be.a('string').and.match(/^https?:/));",
                   "pm.environment.set('payment_id', j.id);",
-                  "console.log('QR string:', j.qr_string.substring(0, 40), '...');"
+                  "pm.environment.set('qr_url', j.qr_url);",
+                  "console.log('QR string:', j.qr_string.substring(0, 40), '...');",
+                  "console.log('QR URL:', j.qr_url);"
                 ]
               }
             }

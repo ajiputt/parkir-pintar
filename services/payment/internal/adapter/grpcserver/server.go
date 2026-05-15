@@ -109,6 +109,7 @@ type paymentCache struct {
 	Gateway    string     `json:"gateway"`
 	GatewayRef string     `json:"gateway_ref,omitempty"`
 	QRString   string     `json:"qr_string,omitempty"`
+	QRURL      string     `json:"qr_url,omitempty"`
 	AmountIDR  int64      `json:"amount_idr"`
 	Status     string     `json:"status"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -124,6 +125,7 @@ func paymentToCache(p *domain.Payment) paymentCache {
 		Gateway:    p.Gateway,
 		GatewayRef: p.GatewayRef,
 		QRString:   p.QRString,
+		QRURL:      p.QRURL,
 		AmountIDR:  p.Amount.Amount(),
 		Status:     string(p.Status),
 		CreatedAt:  p.CreatedAt,
@@ -140,6 +142,7 @@ func cacheToProto(c paymentCache) *paymentv1.Payment {
 		Gateway:    c.Gateway,
 		GatewayRef: c.GatewayRef,
 		QrString:   c.QRString,
+		QrUrl:      c.QRURL,
 		Amount:     &commonv1.Money{Amount: c.AmountIDR, Currency: "IDR"},
 		Status:     statusToProto(c.Status),
 		CreatedAt:  timeToTs(c.CreatedAt),
@@ -159,6 +162,7 @@ func paymentToProto(p *domain.Payment) *paymentv1.Payment {
 		Gateway:    p.Gateway,
 		GatewayRef: p.GatewayRef,
 		QrString:   p.QRString,
+		QrUrl:      p.QRURL,
 		Amount:     &commonv1.Money{Amount: p.Amount.Amount(), Currency: p.Amount.Currency()},
 		Status:     statusToProto(string(p.Status)),
 		CreatedAt:  timeToTs(p.CreatedAt),

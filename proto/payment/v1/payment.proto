@@ -57,6 +57,7 @@ message Payment {
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp settled_at = 10;
   google.protobuf.Timestamp expires_at = 11;
+  string qr_url = 12;                    // Midtrans actions[generate-qr-code].url — public QR image URL
 }
 
 message CreatePaymentRequest {

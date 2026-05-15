@@ -108,6 +108,37 @@ if (-not $nodeReady) {
 }
 
 # ----------------------------------------------------------------------------
+# 5. Wait NATS ready sebelum restart app pods (penting untuk event-driven flow)
+# ----------------------------------------------------------------------------
+if ($nodeReady) {
+    Write-Step "Wait NATS server ready"
+    for ($i = 0; $i -lt 30; $i++) {
+        $natsReady = kubectl get pod nats-0 -n parkir-system -o jsonpath='{.status.containerStatuses[0].ready}' 2>$null
+        if ($natsReady -eq "true") {
+            Write-Ok "NATS server ready"
+            break
+        }
+        Write-Host "Waiting NATS pod ready ($($i+1)/30)..."
+        Start-Sleep -Seconds 10
+    }
+
+    # ------------------------------------------------------------------------
+    # 6. FULL pod delete (bukan rolling restart) supaya re-init NATS connection.
+    # Stale NATS connection dari sebelum sleep gak akan reconnect dengan
+    # rolling restart sederhana - pod baru perlu dial NATS fresh dari startup.
+    # ------------------------------------------------------------------------
+    Write-Step "Force re-create app pods untuk refresh NATS connection"
+    kubectl delete pods -n parkir -l app.kubernetes.io/part-of=parkir-pintar --wait=false 2>$null | Out-Null
+    Write-Ok "Pods deleted - Deployment akan auto-recreate"
+
+    Write-Step "Wait pods Running"
+    foreach ($d in @("gateway", "reservation", "billing", "payment", "notification")) {
+        kubectl rollout status deployment/$d -n parkir --timeout=120s 2>$null
+    }
+    Write-Ok "All deployments rolled out"
+}
+
+# ----------------------------------------------------------------------------
 # Summary
 # ----------------------------------------------------------------------------
 Write-Host ""

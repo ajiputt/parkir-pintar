@@ -181,7 +181,9 @@ spec:
               FROM generate_series(1, 5) g;
 
               -- Insert spots: 30 mobil + 50 motor per floor.
-              DO $$
+              -- Pakai tagged dollar quote $body$ instead of bare $$ untuk
+              -- avoid YAML/Helm escape ambiguity yang strip salah satu $.
+              DO $body$
               DECLARE
                 f RECORD;
                 i INT;
@@ -196,7 +198,8 @@ spec:
                     VALUES (f.id, format('F%s-M-%s', f.level, lpad(i::text, 3, '0')), 'MOTOR');
                   END LOOP;
                 END LOOP;
-              END$$;
+              END
+              $body$;
 
               -- Verify counts
               SELECT
