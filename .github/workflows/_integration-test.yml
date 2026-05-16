@@ -1,0 +1,38 @@
+name: _integration-test
+
+# Reusable workflow — testcontainers-based integration tests.
+# Postgres + Redis + NATS spin up via Docker-in-Docker.
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: false
+        default: '1.26.3'
+        type: string
+
+jobs:
+  integration-test:
+    name: Integration Tests (testcontainers)
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: true
+      - uses: bufbuild/buf-setup-action@v1
+        with: { version: '1.34.0' }
+      - name: Generate proto stubs (buf generate)
+        run: cd proto && buf generate
+
+      # Ryuk disabled — di GHA runner sometimes hang shutdown.
+      - name: Run integration tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: 'true'
+        run: |
+          cd test
+          go test -tags=integration -race -timeout=10m ./integration/...

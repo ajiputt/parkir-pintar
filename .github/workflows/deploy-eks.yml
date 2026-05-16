@@ -1,14 +1,39 @@
 name: Deploy to AWS EKS
 
-# Manual trigger only — production deploy harus deliberate.
-# Build images via ci.yml otomatis di main push, lalu trigger deploy ini
-# dengan image_tag yang sudah di-publish.
+# Dual trigger:
+# - workflow_call    : dipanggil otomatis dari pipeline.yml setelah build-images +
+#                      all gates pass. Default ke staging dry_run=false.
+# - workflow_dispatch: manual override untuk re-deploy / prod / dry-run preview.
 #
 # OIDC ke AWS — no long-lived AWS keys.
 # Helm-based deploy ke EKS cluster, idempotent.
-# Lihat: docs/deployment/aws-eks-architecture.md
+# Lihat: docs/deployment/aws-eks-architecture.md, ADR-0019 (pipeline architecture).
 
 on:
+  workflow_call:
+    inputs:
+      environment:
+        required: false
+        default: 'staging'
+        type: string
+      image_tag:
+        required: false
+        default: ''
+        type: string
+      service_filter:
+        required: false
+        default: 'all'
+        type: string
+      dry_run:
+        required: false
+        default: 'false'
+        type: string
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        required: true
+      SLACK_WEBHOOK_URL:
+        required: false
+
   workflow_dispatch:
     inputs:
       environment:
@@ -45,10 +70,10 @@ env:
 
 jobs:
   deploy:
-    name: Deploy ${{ github.event.inputs.environment }}
+    name: Deploy ${{ inputs.environment }}
     runs-on: ubuntu-latest
     environment:
-      name: ${{ github.event.inputs.environment }}
+      name: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,8 +81,8 @@ jobs:
       - name: Set image tag
         id: tag
         run: |
-          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
-            echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
           else
             echo "tag=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
@@ -134,7 +159,7 @@ jobs:
 
       # ----- Helm dry-run (preview) -----
       - name: Helm dry-run preview
-        if: github.event.inputs.dry_run == 'true'
+        if: inputs.dry_run == 'true'
         run: |
           helm upgrade --install parkir-pintar deploy/helm/parkir-pintar \
             --namespace parkir --create-namespace \
@@ -143,12 +168,12 @@ jobs:
             --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_PREFIX }} \
             --set global.imageTag=${{ steps.tag.outputs.tag }} \
             --set global.eks.accountId=${{ steps.account.outputs.id }} \
-            --set global.env=${{ github.event.inputs.environment }} \
+            --set global.env=${{ inputs.environment }} \
             --set services.notification.iamRoleArn=arn:aws:iam::${{ steps.account.outputs.id }}:role/ajipur-parkir-notification-role \
             --dry-run --debug | tee /tmp/helm-plan.yaml
 
       - name: Upload dry-run output
-        if: github.event.inputs.dry_run == 'true'
+        if: inputs.dry_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: helm-plan-${{ steps.tag.outputs.tag }}
@@ -159,7 +184,7 @@ jobs:
       # dengan SA dari Helm chart parkir-pintar. Cleanup defensif supaya
       # helm install bisa create SA fresh dengan label managed-by: Helm.
       - name: Pre-cleanup eksctl-managed ServiceAccounts (idempotent)
-        if: github.event.inputs.dry_run == 'false'
+        if: inputs.dry_run == 'false'
         run: |
           kubectl create namespace parkir --dry-run=client -o yaml | kubectl apply -f -
           kubectl delete sa notification -n parkir --ignore-not-found
@@ -168,7 +193,7 @@ jobs:
       # ESO chart deploy webhook service terpisah. Apply ExternalSecret butuh
       # webhook reachable kalau gak akan error "service not found".
       - name: Wait External Secrets Operator webhook ready
-        if: github.event.inputs.dry_run == 'false'
+        if: inputs.dry_run == 'false'
         run: |
           echo "==> Wait ESO deployments ready"
           kubectl wait deployment -n external-secrets \
@@ -186,7 +211,7 @@ jobs:
 
       # ----- Apply ExternalSecret (sync Secrets Manager -> K8s Secret) -----
       - name: Apply ExternalSecret manifest
-        if: github.event.inputs.dry_run == 'false'
+        if: inputs.dry_run == 'false'
         run: |
           kubectl apply -f deploy/k8s/eks/external-secret.yaml --namespace parkir
           # Tunggu secret ter-populate (ESO refresh)
@@ -201,7 +226,7 @@ jobs:
 
       # ----- Helm apply real -----
       - name: Helm upgrade --install
-        if: github.event.inputs.dry_run == 'false'
+        if: inputs.dry_run == 'false'
         run: |
           helm upgrade --install parkir-pintar deploy/helm/parkir-pintar \
             --namespace parkir --create-namespace \
@@ -210,18 +235,18 @@ jobs:
             --set global.imageRegistry=${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_PREFIX }} \
             --set global.imageTag=${{ steps.tag.outputs.tag }} \
             --set global.eks.accountId=${{ steps.account.outputs.id }} \
-            --set global.env=${{ github.event.inputs.environment }} \
+            --set global.env=${{ inputs.environment }} \
             --set services.notification.iamRoleArn=arn:aws:iam::${{ steps.account.outputs.id }}:role/ajipur-parkir-notification-role \
             --atomic --timeout 10m
 
       # ----- Wait rollout per service -----
       - name: Wait rollout
-        if: github.event.inputs.dry_run == 'false'
+        if: inputs.dry_run == 'false'
         run: |
-          if [ "${{ github.event.inputs.service_filter }}" = "all" ]; then
+          if [ "${{ inputs.service_filter }}" = "all" ]; then
             SERVICES="gateway reservation billing payment notification"
           else
-            SERVICES=$(echo "${{ github.event.inputs.service_filter }}" | tr ',' ' ')
+            SERVICES=$(echo "${{ inputs.service_filter }}" | tr ',' ' ')
           fi
           for svc in $SERVICES; do
             echo "==> Wait rollout: $svc"
@@ -230,7 +255,7 @@ jobs:
 
       # ----- Smoke test via ALB DNS -----
       - name: Get ALB DNS
-        if: github.event.inputs.dry_run == 'false'
+        if: inputs.dry_run == 'false'
         id: alb
         run: |
           ALB=$(kubectl get ingress -n parkir -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' || true)
@@ -238,7 +263,7 @@ jobs:
           echo "ALB DNS: $ALB"
 
       - name: Smoke test gateway
-        if: github.event.inputs.dry_run == 'false' && steps.alb.outputs.dns != ''
+        if: inputs.dry_run == 'false' && steps.alb.outputs.dns != ''
         run: |
           ALB="${{ steps.alb.outputs.dns }}"
           echo "Smoke testing http://$ALB/healthz"
@@ -261,7 +286,7 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           STATUS: ${{ job.status }}
-          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          ENVIRONMENT: ${{ inputs.environment }}
           IMAGE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           if [ -z "$SLACK_WEBHOOK_URL" ]; then

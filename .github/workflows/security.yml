@@ -1,12 +1,19 @@
 name: Security Scan
 
+# Triggers:
+# - workflow_call    : dipanggil dari pipeline.yml di setiap push/PR ke main.
+# - schedule (weekly): full deep-scan setiap Senin 04:00 UTC (independent dari pipeline).
+# - workflow_dispatch: manual trigger untuk ad-hoc scan.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_call:
+    inputs:
+      go-version:
+        required: false
+        default: '1.26.3'
+        type: string
   schedule:
     - cron: '0 4 * * 1'   # weekly Monday 04:00 UTC
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.26.3' }
+        with: { go-version: '${{ inputs.go-version || ''1.26.3'' }}' }
       # Proto stubs di-generate dari .proto files (gitignored).
       # gosec scan dependency tree butuh package proto/gen/* exist.
       - uses: bufbuild/buf-setup-action@v1
@@ -40,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.26.3' }
+        with: { go-version: '${{ inputs.go-version || ''1.26.3'' }}' }
       # Proto stubs di-generate dari .proto files (gitignored).
       # govulncheck butuh package tree complete supaya bisa trace symbol usage.
       - uses: bufbuild/buf-setup-action@v1

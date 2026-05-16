@@ -1,0 +1,131 @@
+name: Pipeline
+
+# Orchestrator workflow — declares DAG of reusable workflows.
+# Trigger di setiap push ke main + PR ke main.
+#
+# DAG:
+#   lint
+#     └─ unit-test
+#          ├─ integration-test
+#          ├─ e2e-test
+#          ├─ security
+#          └─ sonar  (consume coverage artifact)
+#               └─ all converge → build-images (main push only)
+#                                  └─ deploy-staging (main push only)
+#
+# Lihat ADR-0019 untuk rationale + trade-offs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  # Cancel previous run di branch yang sama kalau push baru — save CI minutes.
+  # Main branch tetap di-queue (jangan cancel) supaya tidak skip deploy event.
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # ===== Stage 1: Lint =====
+  # Fast feedback (~1 min). Fail early kalau ada syntax/style issue.
+  lint:
+    name: Lint
+    uses: ./.github/workflows/_lint.yml
+
+  # ===== Stage 2: Unit tests =====
+  # Coverage artifact dipakai oleh sonar (skip re-run di sonar).
+  unit-test:
+    name: Unit tests
+    needs: lint
+    uses: ./.github/workflows/_unit-test.yml
+
+  # ===== Stage 3 (parallel fan-out): Integration, E2E, Security, Sonar =====
+  # Semua block downstream build-images supaya image gak di-publish kalau ada gate fail.
+  integration-test:
+    name: Integration tests
+    needs: unit-test
+    uses: ./.github/workflows/_integration-test.yml
+
+  e2e-test:
+    name: E2E tests
+    needs: unit-test
+    uses: ./.github/workflows/_e2e-test.yml
+
+  security:
+    name: Security scan
+    needs: unit-test
+    uses: ./.github/workflows/security.yml
+    secrets: inherit
+
+  sonar:
+    name: SonarCloud Quality Gate
+    needs: unit-test
+    uses: ./.github/workflows/sonar.yml
+    secrets: inherit
+    with:
+      coverage-artifact: coverage-report
+
+  # ===== Stage 4: Build & push images (main push only) =====
+  # Gated on ALL upstream gates. PR build cuma compile-check tanpa push.
+  build-images:
+    name: Build & Push Images
+    needs: [integration-test, e2e-test, security, sonar]
+    uses: ./.github/workflows/_build-images.yml
+    secrets: inherit
+    with:
+      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || 'false' }}
+
+  # ===== Stage 5: Deploy staging (main push only) =====
+  # Auto-deploy staging post-build. Prod tetap manual via workflow_dispatch.
+  deploy-staging:
+    name: Deploy Staging
+    needs: build-images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deploy-eks.yml
+    secrets: inherit
+    with:
+      environment: staging
+      image_tag: ${{ needs.build-images.outputs.image-tag }}
+      service_filter: all
+      dry_run: 'false'
+
+  # ===== Stage 6: Pipeline summary (always runs) =====
+  # Single-source pass/fail signal untuk branch protection.
+  # `if: always()` supaya step jalan walaupun upstream fail — supaya kita bisa
+  # check status di summary instead of relying on individual gate status.
+  pipeline-result:
+    name: Pipeline Result
+    needs: [lint, unit-test, integration-test, e2e-test, security, sonar]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate result
+        run: |
+          echo "lint=${{ needs.lint.result }}"
+          echo "unit-test=${{ needs.unit-test.result }}"
+          echo "integration-test=${{ needs.integration-test.result }}"
+          echo "e2e-test=${{ needs.e2e-test.result }}"
+          echo "security=${{ needs.security.result }}"
+          echo "sonar=${{ needs.sonar.result }}"
+
+          FAIL=0
+          for r in \
+            "${{ needs.lint.result }}" \
+            "${{ needs.unit-test.result }}" \
+            "${{ needs.integration-test.result }}" \
+            "${{ needs.e2e-test.result }}" \
+            "${{ needs.security.result }}" \
+            "${{ needs.sonar.result }}"; do
+            if [ "$r" != "success" ]; then
+              FAIL=$((FAIL+1))
+            fi
+          done
+
+          if [ $FAIL -gt 0 ]; then
+            echo "::error::$FAIL gate(s) failed — pipeline NOT green"
+            exit 1
+          fi
+          echo "[OK] all gates green"
