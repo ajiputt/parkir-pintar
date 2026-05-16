@@ -27,15 +27,18 @@ jobs:
         run: cd proto && buf breaking --against '../.git#branch=main,subdir=proto' || true
       - name: Generate proto stubs (buf generate)
         run: cd proto && buf generate
+      # golangci-lint v2.x — built dengan Go 1.26 supaya bisa typecheck
+      # code yang require Go 1.25+ (post-grpc 1.71 bump). v1.64.x lawas
+      # gagal: "package requires newer Go version go1.25".
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.64.8
+          version: latest
           args: --timeout=5m
           working-directory: pkg
       - name: golangci-lint (services)
         run: |
-          for s in services/reservation services/billing services/payment services/gateway; do
+          for s in services/reservation services/billing services/payment services/gateway services/notification; do
             (cd $s && golangci-lint run --timeout=5m ./...) || true
           done
 

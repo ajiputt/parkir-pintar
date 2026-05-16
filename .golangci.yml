@@ -1,28 +1,22 @@
+# golangci-lint v2 config (migrated from v1).
+# See https://golangci-lint.run/docs/configuration/v2/
+version: "2"
+
 run:
   timeout: 5m
-  go: "1.24"
   tests: true
+  # Go version auto-detected dari go.mod (sekarang 1.25.0).
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
-    - staticcheck
-    - typecheck
+    - staticcheck         # includes gosimple di v2 (merged)
     - unused
     - gocritic
     - gocyclo
-    - goimports
-    - gofmt
-    # misspell disabled: codebase pakai komentar Indonesia ("implementasi",
-    # dll.) yang flagged false positive oleh dictionary English-only.
-    # - misspell
-    - bodyclose
-    - sqlclosecheck
-    - rowserrcheck
     - revive
     - prealloc
     - nilerr
@@ -31,35 +25,50 @@ linters:
     - contextcheck
     - durationcheck
     - copyloopvar
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
 
-linters-settings:
-  gocyclo:
-    min-complexity: 15
-  goimports:
-    local-prefixes: github.com/ajiperdana/parkir-pintar
-  errorlint:
-    errorf: true
-  exhaustive:
-    default-signifies-exhaustive: true
-  revive:
+  settings:
+    gocyclo:
+      min-complexity: 15
+    errorlint:
+      errorf: true
+    exhaustive:
+      default-signifies-exhaustive: true
+    revive:
+      rules:
+        - name: var-naming
+        - name: package-comments
+        - name: exported
+          arguments:
+            - checkPrivateReceivers
+            - disableStutteringCheck
+
+  exclusions:
+    # misspell di-disable karena codebase pakai komentar Indonesia
+    # ("implementasi", dll.) yang flagged false positive oleh dictionary English.
+    paths:
+      - bin
+      - proto/gen
+      - vendor
     rules:
-      - name: var-naming
-      - name: package-comments
-      - name: exported
-        arguments:
-          - checkPrivateReceivers
-          - disableStutteringCheck
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+          - gosec
+
+# v2: gofmt + goimports pindah ke `formatters` block (separate dari linters).
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/ajiperdana/parkir-pintar
 
 issues:
-  exclude-dirs:
-    - bin
-    - proto/gen
-    - vendor
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - gosec
   max-issues-per-linter: 0
   max-same-issues: 0
