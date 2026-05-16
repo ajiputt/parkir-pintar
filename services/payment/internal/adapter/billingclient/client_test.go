@@ -79,13 +79,18 @@ func TestNewGRPC_ReturnsClient(t *testing.T) {
 	_ = c.Close()
 }
 
-func TestNewGRPC_BadAddress(t *testing.T) {
+func TestNewGRPC_EmptyAddr_LazyOK(t *testing.T) {
 	t.Parallel()
-	// grpc.NewClient validate target format. Scheme yang aneh menghasilkan error.
-	_, err := NewGRPC("")
-	if err == nil {
-		t.Fatalf("expected error for empty addr")
+	// grpc.NewClient is lazy: empty addr accepted at construction.
+	// Connection errors only surface on first RPC call.
+	c, err := NewGRPC("")
+	if err != nil {
+		t.Fatalf("NewGRPC('') unexpected error: %v", err)
 	}
+	if c == nil {
+		t.Fatalf("NewGRPC('') returned nil client")
+	}
+	_ = c.Close()
 }
 
 // --- Close --------------------------------------------------------------
