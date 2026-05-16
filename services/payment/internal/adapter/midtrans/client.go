@@ -14,6 +14,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/ajiperdana/parkir-pintar/pkg/closeutil"
 )
 
 type Client struct {
@@ -73,7 +75,7 @@ func (c *Client) Charge(ctx context.Context, req ChargeRequest) (*ChargeResponse
 	if err != nil {
 		return nil, fmt.Errorf("midtrans charge: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer closeutil.Quiet(resp.Body)
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {

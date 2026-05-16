@@ -38,6 +38,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/ajiperdana/parkir-pintar/pkg/auth"
+	"github.com/ajiperdana/parkir-pintar/pkg/closeutil"
 	"github.com/ajiperdana/parkir-pintar/pkg/health"
 	"github.com/ajiperdana/parkir-pintar/pkg/logger"
 	"github.com/ajiperdana/parkir-pintar/pkg/metrics"
@@ -157,7 +158,7 @@ func run() error {
 	// (lihat overrideConfigFromEnv).
 	redisAddr := getenv("GATEWAY_REDIS_ADDR", "localhost:6379")
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
-	defer func() { _ = rdb.Close() }()
+	defer closeutil.Quiet(rdb)
 	if _, err := rdb.Ping(rootCtx).Result(); err != nil {
 		log.Warn("rate-limit Redis ping failed — fail-open mode", zap.Error(err))
 	} else {
@@ -299,7 +300,7 @@ func makeWebhookProxy(targetBase string, log *zap.Logger) http.HandlerFunc {
 			http.Error(w, `{"error":"upstream"}`, http.StatusBadGateway)
 			return
 		}
-		defer func() { _ = resp.Body.Close() }()
+		defer closeutil.Quiet(resp.Body)
 		respBody, _ := io.ReadAll(resp.Body)
 		for k, vs := range resp.Header {
 			for _, v := range vs {

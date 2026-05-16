@@ -19,6 +19,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/ajiperdana/parkir-pintar/pkg/clock"
+	"github.com/ajiperdana/parkir-pintar/pkg/closeutil"
 	"github.com/ajiperdana/parkir-pintar/pkg/db"
 	"github.com/ajiperdana/parkir-pintar/pkg/eventbus"
 	"github.com/ajiperdana/parkir-pintar/pkg/grpcutil"
@@ -68,9 +69,11 @@ func run() error {
 	defer func() { _ = shutdownTracing(context.Background()) }()
 
 	// ----- Postgres
+	// Fail-fast: DB_URL wajib di-set. Hardcoded fallback dengan password di-hapus
+	// per Sonar security finding (CWE: hardcoded credentials).
 	dsn := os.Getenv("DB_URL")
 	if dsn == "" {
-		dsn = "postgres://parkir:parkir_dev_only@localhost:5432/parkirpintar?sslmode=disable&search_path=reservation"
+		return fmt.Errorf("DB_URL env var required (no fallback for security)")
 	}
 	pool, err := db.Open(rootCtx, dsn, 20, 4)
 	if err != nil {
@@ -81,7 +84,7 @@ func run() error {
 	// ----- Redis
 	redisAddr := getenv("REDIS_ADDR", "localhost:6379")
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
-	defer func() { _ = rdb.Close() }()
+	defer closeutil.Quiet(rdb)
 	var locker lock.Locker = lock.NewRedisLocker(rdb)
 	if _, err := rdb.Ping(rootCtx).Result(); err != nil {
 		log.Warn("redis ping failed — falling back to memory locker", zap.Error(err))
@@ -126,7 +129,7 @@ func run() error {
 		if dialErr != nil {
 			log.Warn("billing client dial failed (continuing with no overdue check)", zap.Error(dialErr))
 		} else {
-			defer func() { _ = bc.Close() }()
+			defer closeutil.Quiet(bc)
 			overdueChecker = bc
 			log.Info("overdue checker wired (billing gRPC)", zap.String("addr", addr))
 		}

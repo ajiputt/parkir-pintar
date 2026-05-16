@@ -35,6 +35,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/ajiperdana/parkir-pintar/pkg/clock"
+	"github.com/ajiperdana/parkir-pintar/pkg/closeutil"
 	"github.com/ajiperdana/parkir-pintar/pkg/db"
 	"github.com/ajiperdana/parkir-pintar/pkg/eventbus"
 	"github.com/ajiperdana/parkir-pintar/pkg/grpcutil"
@@ -79,7 +80,13 @@ func run() error {
 	defer func() { _ = shutdownTracing(context.Background()) }()
 
 	// ----- Postgres
-	dsn := getenv("DB_URL", "postgres://parkir:parkir_dev_only@localhost:5432/parkirpintar?sslmode=disable&search_path=payment")
+	// Fail-fast: DB_URL wajib di-set. Sebelumnya ada hardcoded fallback dengan
+	// password — di-hapus per Sonar security finding (CWE: hardcoded credentials).
+	// Dev local: export DB_URL=postgres://... sebelum jalankan service.
+	dsn := os.Getenv("DB_URL")
+	if dsn == "" {
+		return fmt.Errorf("DB_URL env var required (no fallback for security)")
+	}
 	pool, err := db.Open(rootCtx, dsn, 10, 2)
 	if err != nil {
 		return err
@@ -119,7 +126,7 @@ func run() error {
 		if dialErr != nil {
 			return fmt.Errorf("billing grpc dial: %w", dialErr)
 		}
-		defer func() { _ = client.Close() }()
+		defer closeutil.Quiet(client)
 		invoiceLookup = client
 		log.Info("billing client wired (gRPC)", zap.String("addr", billingGRPC))
 	}

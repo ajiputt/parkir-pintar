@@ -51,7 +51,12 @@ func run() error {
 	defer cancel()
 
 	// ----- Postgres
-	dsn := getenv("DB_URL", "postgres://gopark:gopark@localhost:5432/gopark?sslmode=disable&search_path=notification")
+	// Fail-fast: DB_URL wajib di-set. Hardcoded fallback dengan password di-hapus
+	// per Sonar security finding (CWE: hardcoded credentials).
+	dsn := os.Getenv("DB_URL")
+	if dsn == "" {
+		return fmt.Errorf("DB_URL env var required (no fallback for security)")
+	}
 	pool, err := db.Open(rootCtx, dsn, 10, 2)
 	if err != nil {
 		return fmt.Errorf("postgres: %w", err)

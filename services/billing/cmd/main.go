@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/ajiperdana/parkir-pintar/pkg/closeutil"
 	"github.com/ajiperdana/parkir-pintar/pkg/db"
 	"github.com/ajiperdana/parkir-pintar/pkg/eventbus"
 	"github.com/ajiperdana/parkir-pintar/pkg/grpcutil"
@@ -65,7 +66,12 @@ func run() error {
 	}
 	defer func() { _ = shutdownTracing(context.Background()) }()
 
-	dsn := getenv("DB_URL", "postgres://parkir:parkir_dev_only@localhost:5432/parkirpintar?sslmode=disable&search_path=billing")
+	// Fail-fast: DB_URL wajib di-set. Hardcoded fallback dengan password di-hapus
+	// per Sonar security finding (CWE: hardcoded credentials).
+	dsn := os.Getenv("DB_URL")
+	if dsn == "" {
+		return fmt.Errorf("DB_URL env var required (no fallback for security)")
+	}
 	pool, err := db.Open(rootCtx, dsn, 10, 2)
 	if err != nil {
 		return err
@@ -78,7 +84,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("nats: %w", err)
 	}
-	defer func() { _ = pub.Close(); _ = sub.Close() }()
+	defer closeutil.Quiet(pub)
+	defer closeutil.Quiet(sub)
 
 	// ----- Wire
 	repo := pgadapter.NewInvoiceRepo(pool)
