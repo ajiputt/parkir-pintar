@@ -87,6 +87,12 @@ spec:
               value: ":{{ $svc.httpPort }}"
             - name: PAYMENT_MOCK_MODE
               value: {{ $svc.midtrans.mockMode | quote }}
+            # AUTO payment mode — handler subscribe `billing.invoice.issued.v1`
+            # dan langsung mark PAID + publish `payment.succeeded.v1` (skip Midtrans).
+            # Default false di values.yaml; production override ke false; demo EKS
+            # override ke true. Lihat ADR-0014.
+            - name: PAYMENT_AUTO_PAY
+              value: {{ $svc.autoPay | default false | quote }}
             # Payment service call billing via gRPC (cross-service blocking check)
             - name: BILLING_GRPC_ADDR
               value: "billing:{{ $.Values.services.billing.grpcPort }}"

@@ -54,6 +54,9 @@ services:
     enabled: true
     replicas: 2
     iamRoleArn: arn:aws:iam::123456789012:role/ajipur-parkir-payment
+    # EKS demo — enable AUTO payment supaya Postman "Happy Flow AUTO" scenario
+    # pass (invoice transition ISSUED → PAID otomatis post-checkout, skip Midtrans).
+    autoPay: true
     midtrans:
       mockMode: false
       serverKeySecret: parkir-secrets

@@ -54,6 +54,11 @@ services:
     replicas: 2
     grpcPort: 9093
     httpPort: 9193
+    # AUTO payment mode — sistem otomatis mark invoice PAID setelah InvoiceIssued
+    # event (skip Midtrans flow). Untuk demo & integration test ScenarioAuto.
+    # Production: set false supaya driver harus deliberate-pay via QRIS.
+    # Lihat: ADR-0014 (hybrid payment), ADR-0012 (billing policy).
+    autoPay: false
     midtrans:
       mockMode: false
       serverKeySecret: parkir-secrets
