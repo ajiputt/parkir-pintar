@@ -22,6 +22,13 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened]
 
+# Workflow-level baseline permission. Sub-jobs override sesuai kebutuhan:
+# - security                → security-events: write (upload SARIF)
+# - build-images, deploy-*  → id-token: write (OIDC ke AWS), packages: write (GHCR)
+# Least-privilege per-job daripada full grant di workflow-level.
+permissions:
+  contents: read
+
 concurrency:
   # Cancel previous run di branch yang sama kalau push baru — save CI minutes.
   # Main branch tetap di-queue (jangan cancel) supaya tidak skip deploy event.
@@ -59,6 +66,9 @@ jobs:
     needs: unit-test
     uses: ./.github/workflows/security.yml
     secrets: inherit
+    permissions:
+      contents: read
+      security-events: write   # Upload SARIF dari gosec/trivy/checkov ke GitHub Security tab
 
   sonar:
     name: SonarCloud Quality Gate
@@ -75,6 +85,10 @@ jobs:
     needs: [integration-test, e2e-test, security, sonar]
     uses: ./.github/workflows/_build-images.yml
     secrets: inherit
+    permissions:
+      contents: read
+      packages: write   # Push ke GHCR
+      id-token: write   # OIDC assume AWS role untuk ECR push
     with:
       push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || 'false' }}
 
@@ -86,6 +100,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/deploy-eks.yml
     secrets: inherit
+    permissions:
+      contents: read
+      id-token: write   # OIDC assume AWS deploy role
     with:
       environment: staging
       image_tag: ${{ needs.build-images.outputs.image-tag }}
