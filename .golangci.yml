@@ -40,10 +40,12 @@ linters:
       rules:
         - name: var-naming
         - name: package-comments
-        - name: exported
-          arguments:
-            - checkPrivateReceivers
-            - disableStutteringCheck
+        # `exported` rule di-disable: force comment di tiap exported symbol
+        # ngabisin waktu untuk demo/MVP. Re-enable di production hardening pass.
+        # - name: exported
+        #   arguments:
+        #     - checkPrivateReceivers
+        #     - disableStutteringCheck
 
   exclusions:
     # misspell di-disable karena codebase pakai komentar Indonesia
@@ -58,6 +60,14 @@ linters:
           - gocyclo
           - errcheck
           - gosec
+          - prealloc        # test file: capacity hint kadang gak ketahuan compile-time
+      # Drop revive "exported should have comment" - too noisy for non-library code.
+      - linters:
+          - revive
+        text: "exported.*should have comment.*or be unexported"
+      - linters:
+          - revive
+        text: "comment on exported.*should be of the form"
 
 # v2: gofmt + goimports pindah ke `formatters` block (separate dari linters).
 formatters:

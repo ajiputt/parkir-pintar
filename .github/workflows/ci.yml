@@ -27,9 +27,11 @@ jobs:
         run: cd proto && buf breaking --against '../.git#branch=main,subdir=proto' || true
       - name: Generate proto stubs (buf generate)
         run: cd proto && buf generate
-      # golangci-lint v2.x — built dengan Go 1.26 supaya bisa typecheck
-      # code yang require Go 1.25+ (post-grpc 1.71 bump). v1.64.x lawas
-      # gagal: "package requires newer Go version go1.25".
+      # golangci-lint v2.x — Tiered enforcement:
+      # - Tier 1 (real bugs: errcheck, staticcheck, bodyclose, dll): BLOCKING.
+      # - Tier 2 (style: revive `exported`, gocritic suggestions): info-only.
+      # Tier mapping di .golangci.yml. Production hardening pass akan promote
+      # Tier 2 ke blocking + integrate SonarCloud Quality Gate.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:

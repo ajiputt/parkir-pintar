@@ -1,0 +1,81 @@
+name: SonarCloud Quality Gate
+
+# Trigger di push ke main + tiap PR untuk diff-mode analysis.
+# Quality Gate block PR merge kalau threshold gak met (config di SonarCloud UI).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  sonar:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    # SonarCloud butuh history penuh untuk blame/new-code mode.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Disable shallow clone
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.3'
+          cache: true
+
+      - uses: bufbuild/buf-setup-action@v1
+        with: { version: '1.34.0' }
+
+      - name: Generate proto stubs
+        run: cd proto && buf generate
+
+      # Generate coverage report per module, gabungkan jadi 1 file (Sonar expect 1 file or multiple via reportPaths).
+      - name: Run tests with coverage
+        run: |
+          set -e
+          mkdir -p coverage-reports
+
+          for m in pkg services/gateway services/reservation services/billing services/payment services/notification; do
+            echo "==> Test + coverage: $m"
+            (cd $m && go test -race -coverprofile=coverage.out -covermode=atomic ./...)
+
+            # Copy ke coverage-reports/ dengan prefix module name supaya unique.
+            mod_name=$(echo $m | tr '/' '_')
+            if [ -f "$m/coverage.out" ]; then
+              cp "$m/coverage.out" "coverage-reports/${mod_name}.out"
+            fi
+          done
+
+          # Merge semua coverage jadi 1 file (Sonar Go scanner pakai standard format).
+          echo "mode: atomic" > coverage.out
+          for f in coverage-reports/*.out; do
+            tail -n +2 "$f" >> coverage.out
+          done
+
+          echo "==> Total coverage:"
+          go tool cover -func=coverage.out | tail -1
+
+      # Run gosec untuk Sonar security hotspots (optional, kalau Quality Profile pakai).
+      - name: Run gosec for Sonar
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -no-fail -fmt=sonarqube -out=gosec-report.json ./... || true
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}     # PR decoration
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}        # auth ke SonarCloud
+        with:
+          # sonar-project.properties di repo root - args optional.
+          args: >
+            -Dsonar.go.gosec.reportPaths=gosec-report.json
+
+      # ----- Wait Quality Gate hasil -----
+      # SonarCloud asynchronous: scan submit dulu, lalu polling hasil.
+      - name: SonarCloud Quality Gate check
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -42,9 +42,9 @@ func Middleware(limiter *Limiter, cfg Config, log *zap.Logger) func(http.Handler
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(fmt.Sprintf(
+				_, _ = fmt.Fprintf(w,
 					`{"error":"rate_limited","message":"too many requests","retry_after":%d}`,
-					retrySec)))
+					retrySec)
 				log.Info("rate limited",
 					zap.String("path", r.URL.Path),
 					zap.String("method", r.Method),
