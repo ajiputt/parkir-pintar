@@ -151,6 +151,8 @@ type MidtransNotification struct {
 //
 // Idempotency: webhook bisa di-redeliver Midtrans. Karena MarkSuccess/MarkFailed
 // di domain return nil kalau sudah di-state target (idempotent), call ulang aman.
+//
+//nolint:gocyclo // switch over Midtrans status codes is intentionally explicit per protocol spec
 func (s *Service) HandleMidtransNotification(ctx context.Context, raw []byte) error {
 	var pl MidtransNotification
 	if err := json.Unmarshal(raw, &pl); err != nil {

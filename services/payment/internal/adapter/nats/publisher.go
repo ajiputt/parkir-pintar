@@ -1,3 +1,4 @@
+// Package nats publishes payment-domain events to the message broker.
 package nats
 
 import (

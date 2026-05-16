@@ -43,6 +43,7 @@ type paymentPayload struct {
 func (d *Dispatcher) HandleReservationConfirmed(ctx context.Context, env eventbus.Envelope) error {
 	pl, err := eventbus.Decode[reservationPayload](env)
 	if err != nil {
+		//nolint:nilerr // poison message: ack-and-skip to avoid NATS redelivery loop
 		return nil
 	}
 	raw, _ := json.Marshal(pl)
@@ -60,6 +61,7 @@ func (d *Dispatcher) HandleReservationConfirmed(ctx context.Context, env eventbu
 func (d *Dispatcher) HandleReservationExpired(ctx context.Context, env eventbus.Envelope) error {
 	pl, err := eventbus.Decode[reservationPayload](env)
 	if err != nil {
+		//nolint:nilerr // poison message: ack-and-skip to avoid NATS redelivery loop
 		return nil
 	}
 	raw, _ := json.Marshal(pl)
@@ -75,6 +77,7 @@ func (d *Dispatcher) HandleReservationExpired(ctx context.Context, env eventbus.
 func (d *Dispatcher) HandleInvoiceIssued(ctx context.Context, env eventbus.Envelope) error {
 	pl, err := eventbus.Decode[invoicePayload](env)
 	if err != nil {
+		//nolint:nilerr // poison message: ack-and-skip to avoid NATS redelivery loop
 		return nil
 	}
 	raw, _ := json.Marshal(pl)
@@ -90,6 +93,7 @@ func (d *Dispatcher) HandleInvoiceIssued(ctx context.Context, env eventbus.Envel
 func (d *Dispatcher) HandleInvoiceOverdue(ctx context.Context, env eventbus.Envelope) error {
 	pl, err := eventbus.Decode[invoicePayload](env)
 	if err != nil {
+		//nolint:nilerr // poison message: ack-and-skip to avoid NATS redelivery loop
 		return nil
 	}
 	raw, _ := json.Marshal(pl)
@@ -111,6 +115,7 @@ func (d *Dispatcher) HandleInvoiceOverdue(ctx context.Context, env eventbus.Enve
 func (d *Dispatcher) HandlePaymentSucceeded(ctx context.Context, env eventbus.Envelope) error {
 	pl, err := eventbus.Decode[paymentPayload](env)
 	if err != nil {
+		//nolint:nilerr // poison message: ack-and-skip to avoid NATS redelivery loop
 		return nil
 	}
 	// Kita TIDAK punya driver_id di payment event. Skip notification (alternative:
@@ -134,6 +139,7 @@ func (d *Dispatcher) HandlePaymentSucceeded(ctx context.Context, env eventbus.En
 func (d *Dispatcher) HandlePaymentFailed(ctx context.Context, env eventbus.Envelope) error {
 	pl, err := eventbus.Decode[paymentPayload](env)
 	if err != nil {
+		//nolint:nilerr // poison message: ack-and-skip to avoid NATS redelivery loop
 		return nil
 	}
 	driverID := env.AggregateID

@@ -37,6 +37,7 @@ type CreateReservation struct {
 	OverdueChecker OverdueChecker
 }
 
+//nolint:gocyclo // orchestrates booking flow; splitting hurts readability of the linear pipeline
 func (uc *CreateReservation) Execute(ctx context.Context, in CreateReservationInput) (*CreateReservationOutput, error) {
 	now := uc.Clock.Now()
 

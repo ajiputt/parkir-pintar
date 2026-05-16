@@ -60,6 +60,7 @@ func main() {
 	}
 }
 
+//nolint:gocyclo // bootstrap orchestrator; intentional sequential setup of subsystems
 func run() error {
 	env := getenv("APP_ENV", "dev")
 	log, err := logger.New("payment", env, getenv("LOG_LEVEL", "info"))
@@ -118,7 +119,7 @@ func run() error {
 		if dialErr != nil {
 			return fmt.Errorf("billing grpc dial: %w", dialErr)
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		invoiceLookup = client
 		log.Info("billing client wired (gRPC)", zap.String("addr", billingGRPC))
 	}

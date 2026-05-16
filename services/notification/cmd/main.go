@@ -38,6 +38,7 @@ func main() {
 	}
 }
 
+//nolint:gocyclo // bootstrap orchestrator; intentional sequential setup of subsystems
 func run() error {
 	env := getenv("APP_ENV", "dev")
 	log, err := logger.New("notification", env, getenv("LOG_LEVEL", "info"))
@@ -147,7 +148,6 @@ func run() error {
 			{eventbus.SubjPaymentFailed, "notif-payment-failed", disp.HandlePaymentFailed},
 		}
 		for _, s := range subscriptions {
-			s := s
 			log.Info("subscribing", zap.String("subject", s.subject), zap.String("durable", s.durable))
 			if err := sub.Subscribe(rootCtx, s.subject, s.durable, s.handler); err != nil {
 				log.Error("subscribe", zap.String("subject", s.subject), zap.Error(err))

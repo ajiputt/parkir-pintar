@@ -44,6 +44,7 @@ func main() {
 	}
 }
 
+//nolint:gocyclo // bootstrap orchestrator; intentional sequential setup of subsystems
 func run() error {
 	env := getenv("APP_ENV", "dev")
 	log, err := logger.New("reservation", env, getenv("LOG_LEVEL", "info"))
@@ -80,7 +81,7 @@ func run() error {
 	// ----- Redis
 	redisAddr := getenv("REDIS_ADDR", "localhost:6379")
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	var locker lock.Locker = lock.NewRedisLocker(rdb)
 	if _, err := rdb.Ping(rootCtx).Result(); err != nil {
 		log.Warn("redis ping failed — falling back to memory locker", zap.Error(err))
@@ -125,7 +126,7 @@ func run() error {
 		if dialErr != nil {
 			log.Warn("billing client dial failed (continuing with no overdue check)", zap.Error(dialErr))
 		} else {
-			defer bc.Close()
+			defer func() { _ = bc.Close() }()
 			overdueChecker = bc
 			log.Info("overdue checker wired (billing gRPC)", zap.String("addr", addr))
 		}

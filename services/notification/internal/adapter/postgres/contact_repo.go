@@ -1,3 +1,4 @@
+// Package postgres implements notification-domain repositories backed by PostgreSQL.
 package postgres
 
 import (

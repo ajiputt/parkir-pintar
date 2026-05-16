@@ -73,7 +73,7 @@ func (c *Client) Charge(ctx context.Context, req ChargeRequest) (*ChargeResponse
 	if err != nil {
 		return nil, fmt.Errorf("midtrans charge: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {

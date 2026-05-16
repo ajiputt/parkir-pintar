@@ -75,10 +75,10 @@ func (l *Loader) Render(kind domain.Kind, vars map[string]any) (string, string, 
 
 	var subjectBuf, bodyBuf bytes.Buffer
 	if err := p.subject.Execute(&subjectBuf, vars); err != nil {
-		return "", "", fmt.Errorf("%w: subject: %v", domain.ErrTemplateRenderFailed, err)
+		return "", "", fmt.Errorf("%w: subject render: %s", domain.ErrTemplateRenderFailed, err.Error())
 	}
 	if err := p.body.Execute(&bodyBuf, vars); err != nil {
-		return "", "", fmt.Errorf("%w: body: %v", domain.ErrTemplateRenderFailed, err)
+		return "", "", fmt.Errorf("%w: body render: %s", domain.ErrTemplateRenderFailed, err.Error())
 	}
 	return strings.TrimSpace(subjectBuf.String()), bodyBuf.String(), nil
 }

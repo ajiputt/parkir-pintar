@@ -58,6 +58,7 @@ func main() {
 	}
 }
 
+//nolint:gocyclo // bootstrap orchestrator; intentional sequential setup of subsystems
 func run() error {
 	env := getenv("APP_ENV", "dev")
 	log, err := logger.New("gateway", env, getenv("LOG_LEVEL", "info"))
@@ -156,7 +157,7 @@ func run() error {
 	// (lihat overrideConfigFromEnv).
 	redisAddr := getenv("GATEWAY_REDIS_ADDR", "localhost:6379")
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	if _, err := rdb.Ping(rootCtx).Result(); err != nil {
 		log.Warn("rate-limit Redis ping failed — fail-open mode", zap.Error(err))
 	} else {
@@ -298,7 +299,7 @@ func makeWebhookProxy(targetBase string, log *zap.Logger) http.HandlerFunc {
 			http.Error(w, `{"error":"upstream"}`, http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		respBody, _ := io.ReadAll(resp.Body)
 		for k, vs := range resp.Header {
 			for _, v := range vs {
@@ -326,6 +327,8 @@ func getenv(k, def string) string {
 //	GATEWAY_RATELIMIT_LIGHT_RPS, GATEWAY_RATELIMIT_LIGHT_BURST
 //	GATEWAY_RATELIMIT_WEBHOOK_RPS, GATEWAY_RATELIMIT_WEBHOOK_BURST
 //	GATEWAY_RATELIMIT_DEFAULT_RPS, GATEWAY_RATELIMIT_DEFAULT_BURST
+//
+//nolint:gocyclo // config mapping, intentionally explicit per-env-var
 func overrideConfigFromEnv(c ratelimit.Config) ratelimit.Config {
 	if v, _ := strconv.Atoi(getenv("GATEWAY_RATELIMIT_DEFAULT_RPS", "")); v > 0 {
 		c.Default.RPS = v
