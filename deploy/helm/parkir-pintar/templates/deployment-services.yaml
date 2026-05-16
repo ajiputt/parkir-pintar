@@ -20,6 +20,9 @@ spec:
         app.kubernetes.io/name: {{ $name }}
         app.kubernetes.io/part-of: parkir-pintar
     spec:
+      # Service account dengan IRSA annotation (kalau iamRoleArn di-set di values).
+      # Tanpa ini, pod fallback ke 'default' SA -> NodeInstanceRole -> SES denied.
+      serviceAccountName: {{ $name }}
       securityContext:
         {{- toYaml $.Values.podSecurityContext | nindent 8 }}
       containers:
@@ -100,6 +103,16 @@ spec:
             # exist di runtime container.
             - name: NOTIFICATION_TEMPLATE_DIR
               value: /templates
+            # SES config — set NOTIFICATION_MOCK_SES=false untuk send email beneran.
+            # SES_FROM harus verified identity di AWS SES (di sandbox: mandatory).
+            - name: NOTIFICATION_MOCK_SES
+              value: {{ $svc.ses.mockMode | default "false" | quote }}
+            - name: SES_FROM
+              value: {{ $svc.ses.fromEmail | default "noreply@parkirpintar.id" | quote }}
+            - name: SES_REPLY_TO
+              value: {{ $svc.ses.replyToEmail | default "" | quote }}
+            - name: AWS_REGION
+              value: {{ $.Values.global.eks.region | default "ap-southeast-3" | quote }}
             {{- end }}
           resources:
             {{- toYaml $svc.resources | nindent 12 }}

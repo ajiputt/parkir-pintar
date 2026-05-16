@@ -63,6 +63,16 @@ services:
     enabled: true
     replicas: 1
     iamRoleArn: arn:aws:iam::123456789012:role/ajipur-parkir-notification   # SES + SecretsManager
+    ses:
+      mockMode: "false"                              # false = real send. true = log only
+      fromEmail: "ajiperdanaputra90@gmail.com"       # harus verified di SES (sandbox)
+      replyToEmail: ""                               # optional
+
+# ---- Monitoring ServiceMonitor (Prometheus auto-scrape) ----
+monitoring:
+  enabled: true
+  prometheusRelease: "prometheus"   # match Helm release name kube-prometheus-stack
+  scrapeInterval: "15s"
 
 # ---- Ingress: AWS Load Balancer Controller (ALB) ----
 # Demo: HTTP-only di ALB. Production: tambahin ACM cert ARN + HTTPS listener.
@@ -92,7 +102,7 @@ postgres:
 
 redis:
   external: true
-  addr: parkir-redis.xxx.cache.amazonaws.com:6379
+  addr: ajipur-parkir-redis.habhke.0001.apse3.cache.amazonaws.com:6379
 
 # NATS: in-cluster StatefulSet via separate Helm release (nats-io/nats chart).
 # Default: connect ke cluster-local nats service.
@@ -104,7 +114,8 @@ nats:
 # ---- Observability ----
 opentelemetry:
   enabled: true
-  endpoint: otel-collector.observability.svc.cluster.local:4317
+  # Tempo distributor accepts OTLP gRPC at port 4317.
+  endpoint: tempo.observability.svc.cluster.local:4317
 
 # ---- Security: PodSecurityContext sudah di values.yaml, override seperlunya saja ----
 podSecurityContext:

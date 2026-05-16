@@ -40,6 +40,7 @@ import (
 	"github.com/ajiperdana/parkir-pintar/pkg/auth"
 	"github.com/ajiperdana/parkir-pintar/pkg/health"
 	"github.com/ajiperdana/parkir-pintar/pkg/logger"
+	"github.com/ajiperdana/parkir-pintar/pkg/metrics"
 	"github.com/ajiperdana/parkir-pintar/pkg/ratelimit"
 	"github.com/ajiperdana/parkir-pintar/pkg/tracing"
 
@@ -138,6 +139,9 @@ func run() error {
 	rootMux.HandleFunc("/docs", swaggerUI)
 	rootMux.HandleFunc("/openapi.json", openapiHandler)
 
+	// Prometheus metrics — di-scrape oleh Prometheus server via ServiceMonitor.
+	rootMux.Handle("/metrics", metrics.Handler())
+
 	// Webhook — raw HTTP forward (grpc-gateway tidak cocok karena raw bytes + signature header)
 	paymentHTTP := getenv("PAYMENT_HTTP_URL", "http://localhost:9193")
 	rootMux.HandleFunc("/v1/payments/midtrans/notification", makeWebhookProxy(paymentHTTP, log))
@@ -193,13 +197,17 @@ func run() error {
 
 	// ----- Middleware chain -----
 	// Order: outer-most → inner-most.
-	// SecurityHeaders → CORS → RequestID → Logging → RateLimit → Auth → mux
-	handler := middleware.SecurityHeaders(
-		middleware.CORS(
-			middleware.RequestID(
-				middleware.Logging(log)(
-					ratelimit.Middleware(rateLimiter, rlConfig, log)(
-						authMiddleware.Wrap(rootMux),
+	// Metrics → SecurityHeaders → CORS → RequestID → Logging → RateLimit → Auth → mux
+	// Metrics wrap di paling luar supaya capture semua request termasuk yang
+	// di-block oleh rate-limit / auth (status 429/401 tetap terhitung).
+	handler := metrics.HTTPMiddleware(
+		middleware.SecurityHeaders(
+			middleware.CORS(
+				middleware.RequestID(
+					middleware.Logging(log)(
+						ratelimit.Middleware(rateLimiter, rlConfig, log)(
+							authMiddleware.Wrap(rootMux),
+						),
 					),
 				),
 			),

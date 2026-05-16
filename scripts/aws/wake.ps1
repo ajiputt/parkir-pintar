@@ -411,6 +411,67 @@ helm upgrade --install nats nats/nats `
 Write-Ok "NATS installed (JetStream MemoryStore - no PVC, sleep/resume safe)"
 
 # ============================================================================
+# 10.5. Install Observability stack — kube-prometheus-stack + Loki + Tempo
+# ============================================================================
+# Demo observability: Prometheus (metrics) + Grafana (dashboard) + Loki (logs) + Tempo (traces).
+# Disable storage persistence (emptyDir) supaya sleep/resume gak nemu PVC issue
+# kayak NATS. Trade-off: data hilang saat pod restart - OK untuk demo.
+Write-Step "Install Observability stack (Prometheus + Grafana + Loki + Tempo)"
+
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>$null
+helm repo add grafana https://grafana.github.io/helm-charts 2>$null
+helm repo update 2>$null
+
+kubectl create namespace observability 2>$null
+
+# kube-prometheus-stack (Prometheus + Grafana + Alertmanager)
+helm upgrade --install prometheus prometheus-community/kube-prometheus-stack `
+    --namespace observability `
+    --set grafana.adminPassword="parkirpintar-demo" `
+    --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false `
+    --set prometheus.prometheusSpec.storageSpec=null `
+    --set alertmanager.enabled=false `
+    --set prometheus.prometheusSpec.resources.requests.memory=400Mi `
+    --set prometheus.prometheusSpec.retention=2h `
+    --wait --timeout 5m
+
+Write-Ok "Prometheus + Grafana installed"
+
+# Loki (logs aggregation, in-memory mode untuk demo)
+helm upgrade --install loki grafana/loki `
+    --namespace observability `
+    --set deploymentMode=SingleBinary `
+    --set "loki.commonConfig.replication_factor=1" `
+    --set "loki.storage.type=filesystem" `
+    --set "singleBinary.replicas=1" `
+    --set "singleBinary.persistence.enabled=false" `
+    --set "loki.schemaConfig.configs[0].from=2024-01-01" `
+    --set "loki.schemaConfig.configs[0].store=tsdb" `
+    --set "loki.schemaConfig.configs[0].object_store=filesystem" `
+    --set "loki.schemaConfig.configs[0].schema=v13" `
+    --set "loki.schemaConfig.configs[0].index.prefix=loki_index_" `
+    --set "loki.schemaConfig.configs[0].index.period=24h" `
+    --set "loki.auth_enabled=false" `
+    --wait --timeout 5m 2>$null
+
+# Promtail (log shipper DaemonSet, forward pod logs ke Loki)
+helm upgrade --install promtail grafana/promtail `
+    --namespace observability `
+    --set "config.clients[0].url=http://loki:3100/loki/api/v1/push" `
+    --wait 2>$null
+
+Write-Ok "Loki + Promtail installed"
+
+# Tempo (traces backend, terima OTLP gRPC dari pkg/tracing services)
+helm upgrade --install tempo grafana/tempo `
+    --namespace observability `
+    --set "tempo.storage.trace.backend=local" `
+    --set "persistence.enabled=false" `
+    --wait 2>$null
+
+Write-Ok "Tempo installed"
+
+# ============================================================================
 # 11. Wait ESO CRDs ready, lalu Apply External Secret manifest
 # ============================================================================
 Write-Step "Wait ESO CRDs registered + apply ExternalSecret"

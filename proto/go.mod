@@ -1,6 +1,6 @@
 module github.com/ajiperdana/parkir-pintar/proto
 
-go 1.22
+go 1.26
 
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0

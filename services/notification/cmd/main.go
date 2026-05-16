@@ -22,6 +22,7 @@ import (
 	"github.com/ajiperdana/parkir-pintar/pkg/eventbus"
 	"github.com/ajiperdana/parkir-pintar/pkg/health"
 	"github.com/ajiperdana/parkir-pintar/pkg/logger"
+	"github.com/ajiperdana/parkir-pintar/pkg/metrics"
 
 	natsadapter "github.com/ajiperdana/parkir-pintar/services/notification/internal/adapter/nats"
 	pgadapter "github.com/ajiperdana/parkir-pintar/services/notification/internal/adapter/postgres"
@@ -182,6 +183,7 @@ func run() error {
 			}),
 		},
 	})
+	mux.Handle("/metrics", metrics.Handler())
 
 	addr := getenv("NOTIFICATION_HTTP_ADDR", ":9196")
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}

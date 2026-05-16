@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.24' }
+        with: { go-version: '1.26.3' }
       - name: Run gosec
         uses: securego/gosec@master
         with:
@@ -34,15 +34,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.24' }
+        with: { go-version: '1.26.3' }
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck
+
+      # Scan tiap module — track fail-count untuk decide overall workflow result.
+      # Tanpa `|| true` supaya CI nge-block kalau ada vulnerability baru ke-introduce.
+      - name: Run govulncheck (fail-on-vuln)
         run: |
-          for m in pkg services/reservation services/billing services/payment services/gateway; do
-            echo "==> $m"
-            (cd $m && govulncheck ./...) || true
+          set +e   # disable exit-on-error supaya bisa aggregate hasil
+          FAIL=0
+          for m in pkg services/reservation services/billing services/payment services/gateway services/notification; do
+            echo ""
+            echo "=========================================="
+            echo "==> Scanning $m"
+            echo "=========================================="
+            (cd $m && govulncheck ./...)
+            rc=$?
+            if [ $rc -ne 0 ]; then
+              echo "::warning::Vulnerabilities found in $m (exit $rc)"
+              FAIL=$((FAIL+1))
+            fi
           done
+
+          echo ""
+          echo "==========================================="
+          if [ $FAIL -eq 0 ]; then
+            echo "[OK] All modules clean — no vulnerabilities"
+            exit 0
+          else
+            echo "[FAIL] $FAIL module(s) reported vulnerabilities"
+            echo "::error::Fix or accept (via ADR) before merge"
+            exit 1
+          fi
 
   trivy:
     name: Trivy (image + IaC scan)

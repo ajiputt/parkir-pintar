@@ -41,6 +41,7 @@ import (
 	apphealth "github.com/ajiperdana/parkir-pintar/pkg/health"
 	"github.com/ajiperdana/parkir-pintar/pkg/idempotency"
 	"github.com/ajiperdana/parkir-pintar/pkg/logger"
+	"github.com/ajiperdana/parkir-pintar/pkg/metrics"
 	"github.com/ajiperdana/parkir-pintar/pkg/tracing"
 
 	"github.com/ajiperdana/parkir-pintar/services/payment/internal/adapter/billingclient"
@@ -224,6 +225,7 @@ func run() error {
 		}),
 	}
 	mux.Handle("/readyz", &apphealth.Handler{Timeout: 2 * time.Second, Checks: readyChecks})
+	mux.Handle("/metrics", metrics.Handler())
 	mux.HandleFunc("/v1/payments/midtrans/notification", makeNotificationHandler(svc, log))
 
 	httpAddr := getenv("PAYMENT_HTTP_ADDR", ":9193")

@@ -134,3 +134,11 @@ networkPolicy:
 # Set false kalau mau handle migration manual / external (mis. CI step).
 migration:
   enabled: true
+
+# ---- Monitoring (Prometheus ServiceMonitor) ----
+# Set true kalau cluster sudah punya kube-prometheus-stack installed.
+# ServiceMonitor CRD auto-discover /metrics endpoint dari semua service parkir.
+monitoring:
+  enabled: false
+  prometheusRelease: "prometheus"  # match label `release` di kube-prometheus-stack default selector
+  scrapeInterval: "15s"

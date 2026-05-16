@@ -966,8 +966,8 @@
       ]
     },
     {
-      "name": "09 — User-Selected Spot Mode",
-      "description": "Driver list spots per lantai (filter floor + vehicle_type), pilih spesifik, kirim CreateReservation dengan mode=USER + spot_id.",
+      "name": "09 — Happy Flow: USER-Selected Spot + AUTO Payment",
+      "description": "Driver list spots per lantai (filter floor + vehicle_type), pilih spesifik, lalu lakukan happy flow lengkap: Create → Check-in → Check-out → auto-pay invoice (PAID).\n\nUrutan run:\n1. List Spots — auto-set user_spot_id ke first available spot\n2. Create Reservation USER + AUTO payment\n3. Check-in\n4. Check-out\n5. Get Invoice — expect PAID (auto-paid via NATS event)",
       "item": [
         {
           "name": "List Spots (Floor 1, CAR, AVAILABLE)",
@@ -979,6 +979,7 @@
                   "const j = pm.response.json();",
                   "pm.test('has floors[]', () => pm.expect(j.floors).to.be.an('array').that.is.not.empty);",
                   "const firstSpot = j.floors[0].spots[0];",
+                  "pm.test('has at least 1 available spot', () => pm.expect(firstSpot).to.be.an('object'));",
                   "if (firstSpot) {",
                   "  pm.environment.set('user_spot_id', firstSpot.id);",
                   "  console.log('Picked spot:', firstSpot.code, firstSpot.id);",
@@ -1003,7 +1004,7 @@
           }
         },
         {
-          "name": "Create Reservation (mode=USER + spot_id)",
+          "name": "Create Reservation (mode=USER + AUTO payment)",
           "event": [
             {
               "listen": "prerequest",
@@ -1015,7 +1016,10 @@
                 "exec": [
                   "const j = pm.response.json();",
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('assignment_mode USER', () => pm.expect(j.reservation.assignment_mode).to.eql('USER'));"
+                  "pm.test('assignment_mode USER', () => pm.expect(j.reservation.assignment_mode).to.eql('USER'));",
+                  "pm.test('payment_mode AUTO', () => pm.expect(j.reservation.payment_mode).to.eql('AUTO'));",
+                  "pm.environment.set('reservation_id', j.reservation.id);",
+                  "console.log('Reservation:', j.reservation.id, 'spot:', j.reservation.spot.code);"
                 ]
               }
             }
@@ -1035,6 +1039,102 @@
               "raw": "{{baseUrl}}/v1/reservations",
               "host": ["{{baseUrl}}"],
               "path": ["v1", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "Check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('state = CHECKED_IN', () => pm.expect(j.state).to.eql('CHECKED_IN'));",
+                  "pm.test('checkin_at populated', () => pm.expect(j.checkin_at).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkin",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkin"]
+            }
+          }
+        },
+        {
+          "name": "Check-out",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('state = CHECKED_OUT', () => pm.expect(j.state).to.eql('CHECKED_OUT'));",
+                  "pm.test('checkout_at populated', () => pm.expect(j.checkout_at).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}:checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}:checkout"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice (expect PAID)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Beri waktu auto-pay subscriber + worker NATS untuk process",
+                  "setTimeout(() => {}, 1500);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('invoice PAID (auto)', () => pm.expect(j.status).to.eql('PAID'));",
+                  "pm.test('payment_mode AUTO', () => pm.expect(j.payment_mode).to.eql('AUTO'));",
+                  "pm.environment.set('invoice_id', j.id);",
+                  "console.log('Total:', j.total.amount, j.total.currency);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reservations/{{reservation_id}}/invoice",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "reservations", "{{reservation_id}}", "invoice"]
             }
           }
         }
@@ -1088,7 +1188,7 @@
     },
     {
       "name": "11 — Rate Limit Burst",
-      "description": "Heavy tier (POST /v1/reservations) default 5 RPS, burst 10. Run via Collection Runner dengan `Iterations=15` `Delay=0` — yang ke-11+ kena 429 Retry-After.",
+      "description": "Heavy tier (POST /v1/reservations) default 5 RPS, burst 10. Run via Collection Runner dengan `Iterations=15` `Delay=0`.\n\nExpected:\n- Iter 1-10: status 200 (burst capacity consumed)\n- Iter 11+: kemungkinan 429 rate_limited, tergantung timing token bucket replenish (5 token/detik)\n- Final assertion: minimal 1 iter dalam 15 harus 429 (proof rate limit aktif)",
       "item": [
         {
           "name": "Burst Create (run iterations=15)",
@@ -1097,7 +1197,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "pm.variables.set('idempotency_key', 'burst-' + pm.info.iteration + '-' + Date.now());"
+                  "pm.variables.set('idempotency_key', 'burst-' + pm.info.iteration + '-' + Date.now());",
+                  "// Reset counter di iter 1",
+                  "if (pm.info.iteration === 0) {",
+                  "  pm.collectionVariables.set('rl_429_count', 0);",
+                  "  pm.collectionVariables.set('rl_2xx_count', 0);",
+                  "}"
                 ]
               }
             },
@@ -1109,8 +1214,25 @@
                   "const remaining = pm.response.headers.get('X-RateLimit-Remaining');",
                   "const retryAfter = pm.response.headers.get('Retry-After');",
                   "console.log('Iter', pm.info.iteration, '→', code, '| remaining=', remaining, '| retry-after=', retryAfter);",
-                  "if (pm.info.iteration >= 11) {",
-                  "  pm.test('iter ' + pm.info.iteration + ' should be 429', () => pm.expect(code).to.eql(429));",
+                  "",
+                  "// Per-iter assertion: harus 200 (sukses) atau 429 (rate-limited)",
+                  "pm.test('status is 200 or 429', () => pm.expect([200, 429]).to.include(code));",
+                  "",
+                  "// Track count untuk final assertion",
+                  "if (code === 429) {",
+                  "  pm.collectionVariables.set('rl_429_count', (parseInt(pm.collectionVariables.get('rl_429_count') || 0) + 1));",
+                  "} else if (code >= 200 && code < 300) {",
+                  "  pm.collectionVariables.set('rl_2xx_count', (parseInt(pm.collectionVariables.get('rl_2xx_count') || 0) + 1));",
+                  "}",
+                  "",
+                  "// Final iter (15 = 0-indexed 14): assert rate limit aktif",
+                  "const totalIters = pm.info.iteration + 1;",
+                  "if (totalIters >= 14) {",
+                  "  const count429 = parseInt(pm.collectionVariables.get('rl_429_count') || 0);",
+                  "  const count2xx = parseInt(pm.collectionVariables.get('rl_2xx_count') || 0);",
+                  "  console.log('Summary:', count2xx, '2xx +', count429, '429');",
+                  "  pm.test('at least 1 request rate-limited (proves middleware active)', () => pm.expect(count429).to.be.at.least(1));",
+                  "  pm.test('burst capacity respected (>= 8 success)', () => pm.expect(count2xx).to.be.at.least(8));",
                   "}"
                 ]
               }

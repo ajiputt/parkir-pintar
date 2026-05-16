@@ -26,6 +26,7 @@ import (
 	"github.com/ajiperdana/parkir-pintar/pkg/idempotency"
 	"github.com/ajiperdana/parkir-pintar/pkg/lock"
 	"github.com/ajiperdana/parkir-pintar/pkg/logger"
+	"github.com/ajiperdana/parkir-pintar/pkg/metrics"
 	"github.com/ajiperdana/parkir-pintar/pkg/tracing"
 
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/adapter/billingclient"
@@ -210,6 +211,8 @@ func run() error {
 		},
 	}
 	mux.Handle("/readyz", readyHandler)
+	// Prometheus metrics endpoint — di-scrape oleh Prometheus via ServiceMonitor.
+	mux.Handle("/metrics", metrics.Handler())
 	httpSrv := &http.Server{Addr: httpAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {

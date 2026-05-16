@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: {{ $name }}
         app.kubernetes.io/part-of: parkir-pintar
     spec:
+      serviceAccountName: {{ $name }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -32,6 +33,11 @@ spec:
             {{- include "parkir.commonEnv" . | nindent 12 }}
             - name: GATEWAY_HTTP_PORT
               value: ":{{ .Values.services.gateway.port }}"
+            # Redis untuk rate-limit (token bucket distributed via Lua).
+            # Tanpa env ini, gateway fallback ke localhost:6379 -> connection
+            # refused -> fail-open mode (rate-limit non-effective).
+            - name: GATEWAY_REDIS_ADDR
+              value: {{ .Values.redis.addr | quote }}
             # gRPC dial address ke backend service (K8s service DNS).
             # Default di code = localhost:9091 dst, harus di-override di K8s.
             - name: RESERVATION_GRPC_ADDR_DIAL

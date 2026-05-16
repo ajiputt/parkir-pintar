@@ -1,0 +1,33 @@
+{{- /*
+ServiceMonitor — di-discover oleh Prometheus operator untuk auto-scrape /metrics.
+Butuh kube-prometheus-stack udah ke-install di cluster (CRD monitoring.coreos.com).
+
+Selector match Service per app via label app.kubernetes.io/part-of=parkir-pintar.
+Prometheus akan scrape semua port http per service.
+
+Disable kalau Prometheus operator gak ke-install: set monitoring.enabled=false.
+*/}}
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: parkir-pintar
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: parkir-pintar
+    app.kubernetes.io/part-of: parkir-pintar
+    # Label release supaya kube-prometheus-stack pick up (default selector).
+    release: {{ .Values.monitoring.prometheusRelease | default "prometheus" }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: parkir-pintar
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.scrapeInterval | default "15s" }}
+      scrapeTimeout: 10s
+{{- end }}

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-FROM golang:1.24-alpine AS build
+FROM golang:1.26.3-alpine AS build
 WORKDIR /src
 
 # Build dengan module mode (no workspace) supaya Docker image self-contained

@@ -27,6 +27,7 @@ import (
 	"github.com/ajiperdana/parkir-pintar/pkg/grpcutil"
 	apphealth "github.com/ajiperdana/parkir-pintar/pkg/health"
 	"github.com/ajiperdana/parkir-pintar/pkg/logger"
+	"github.com/ajiperdana/parkir-pintar/pkg/metrics"
 	"github.com/ajiperdana/parkir-pintar/pkg/pricing"
 	"github.com/ajiperdana/parkir-pintar/pkg/tracing"
 
@@ -175,6 +176,7 @@ func run() error {
 		},
 	}
 	mux.Handle("/readyz", readyHandler)
+	mux.Handle("/metrics", metrics.Handler())
 
 	httpSrv := &http.Server{Addr: httpAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
