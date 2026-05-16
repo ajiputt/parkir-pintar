@@ -92,8 +92,21 @@ jobs:
     with:
       push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || 'false' }}
 
-  # ===== Stage 5: Deploy staging (main push only) =====
-  # Auto-deploy staging post-build. Prod tetap manual via workflow_dispatch.
+  # ===== Stage 5: Deploy staging — MANUAL APPROVAL GATE =====
+  # Job declared di pipeline tapi PAUSED di "Environment protection rule" sampai
+  # operator klik "Review deployments → Approve" di Actions UI.
+  #
+  # PRE-REQ (one-time setup di GitHub repo settings):
+  #   Settings → Environments → New environment "staging"
+  #     → Required reviewers: <aji>
+  #     → (optional) Wait timer: 0 min
+  #     → (optional) Deployment branches: main only
+  #
+  # Tanpa setup environment "staging" + required reviewer, job ini akan auto-jalan
+  # tanpa pause. DENGAN setup, job berhenti di "Waiting" state — Aji dapat email
+  # + UI notification untuk approve.
+  #
+  # Lihat ADR-0019 untuk rationale.
   deploy-staging:
     name: Deploy Staging
     needs: build-images
