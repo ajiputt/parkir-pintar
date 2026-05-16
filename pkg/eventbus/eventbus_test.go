@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ajiperdana/parkir-pintar/pkg/eventbus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ajiperdana/parkir-pintar/pkg/eventbus"
 )
 
 type samplePayload struct {

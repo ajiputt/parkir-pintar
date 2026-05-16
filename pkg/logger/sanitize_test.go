@@ -23,7 +23,6 @@ func TestMaskEmail(t *testing.T) {
 		{"ajiperdana@gmail.com", "a*********@gmail.com"},
 	}
 	for _, c := range cases {
-		c := c
 		t.Run(c.in, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, c.want, logger.MaskEmail(c.in))

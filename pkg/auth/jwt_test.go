@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ajiperdana/parkir-pintar/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ajiperdana/parkir-pintar/pkg/auth"
 )
 
 const testSecret = "test-signing-key-not-for-production-use-12345678"

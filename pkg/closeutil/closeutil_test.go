@@ -4,9 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ajiperdana/parkir-pintar/pkg/closeutil"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+
+	"github.com/ajiperdana/parkir-pintar/pkg/closeutil"
 )
 
 // fakeCloser — io.Closer test double. Track call count + optional return error.

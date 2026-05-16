@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ajiperdana/parkir-pintar/pkg/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ajiperdana/parkir-pintar/pkg/clock"
 )
 
 func TestNew_ReturnsRealClock(t *testing.T) {

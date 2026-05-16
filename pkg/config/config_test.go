@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ajiperdana/parkir-pintar/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ajiperdana/parkir-pintar/pkg/config"
 )
 
 type testCfg struct {
