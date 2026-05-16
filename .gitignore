@@ -19,6 +19,18 @@ dist/
 coverage.out
 *.cover
 profile.cov
+coverage-reports/
+
+# ----- SonarScanner artifacts ------------------------------------------------
+# Sonar CLI generate working dir + task tracking file per run. Re-generated
+# tiap scan, tidak perlu di-commit.
+.scannerwork/
+.sonar/
+.sonar_lock
+report-task.txt
+gosec-report.json
+# Personal local helper script (per-developer, beda token + project key).
+scripts/sonar-local.ps1
 
 # ----- Generated code --------------------------------------------------------
 # Output `make proto` (buf generate). Regenerable, jangan commit.

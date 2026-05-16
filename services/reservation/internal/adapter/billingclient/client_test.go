@@ -21,10 +21,14 @@ func TestNew_ValidAddr_CreatesClient(t *testing.T) {
 	assert.NoError(t, c.Close())
 }
 
-// TestNew_EmptyAddr_Errors — grpc.NewClient rejects an empty target.
-func TestNew_EmptyAddr_Errors(t *testing.T) {
-	_, err := New("")
-	assert.Error(t, err)
+// TestNew_EmptyAddr_LazyOK — grpc.NewClient is lazy: empty addr is accepted
+// at construction time. Connection errors only surface on first RPC call.
+// We just verify that the constructor doesn't panic + returns a usable client.
+func TestNew_EmptyAddr_LazyOK(t *testing.T) {
+	c, err := New("")
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	assert.NoError(t, c.Close())
 }
 
 // TestClose_NilConn_NoError — defensive: a Client with nil conn should
