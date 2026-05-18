@@ -37,6 +37,10 @@ services:
     enabled: true
     replicas: 3
     iamRoleArn: ""   # gateway: tidak perlu AWS access (TLS via ACM, no API call)
+    # Auth strict mode: token wajib untuk protected endpoint.
+    # Untuk demo Postman, dapat JWT via /v1/auth/dev-token (butuh X-Dev-Secret).
+    # Sebelumnya default "true" (passthrough) — security risk untuk public ALB.
+    authPassthroughNoToken: "false"
 
   reservation:
     enabled: true

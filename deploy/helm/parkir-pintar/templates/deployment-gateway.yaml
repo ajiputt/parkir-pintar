@@ -59,6 +59,20 @@ spec:
                   name: parkir-secrets
                   key: jwt-secret
                   optional: true
+            # Auth enforcement: strict mode di production/demo. Driver harus
+            # include Bearer token. Default sebelumnya "true" (passthrough)
+            # adalah security risk untuk public ALB.
+            - name: AUTH_PASSTHROUGH_NO_TOKEN
+              value: {{ .Values.services.gateway.authPassthroughNoToken | default "false" | quote }}
+            # Dev-token endpoint secret. Kalau set, endpoint /v1/auth/dev-token
+            # aktif (gated by X-Dev-Secret header). Kalau kosong, endpoint disabled.
+            # Production: jangan set. Staging demo: set via parkir-secrets.
+            - name: DEV_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: parkir-secrets
+                  key: dev-token-secret
+                  optional: true
           resources:
             {{- toYaml .Values.services.gateway.resources | nindent 12 }}
           readinessProbe:

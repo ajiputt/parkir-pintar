@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,7 +173,9 @@ func run() error {
 	jwtSecret := getenv("JWT_SECRET", "demo-secret-change-me-in-production")
 	jwtIssuer := getenv("JWT_ISSUER", "parkirpintar")
 	jwtTTL := durationenv("JWT_TTL", time.Hour)
-	authPassthrough, _ := strconv.ParseBool(getenv("AUTH_PASSTHROUGH_NO_TOKEN", "true"))
+	// Security: default strict mode (token required). Override ke "true" hanya
+	// untuk dev local atau demo internal — JANGAN di production-facing ALB.
+	authPassthrough, _ := strconv.ParseBool(getenv("AUTH_PASSTHROUGH_NO_TOKEN", "false"))
 	jwtVerifier := auth.NewVerifier(jwtSecret, jwtIssuer)
 	jwtSigner := auth.NewSigner(jwtSecret, jwtIssuer, jwtTTL)
 	authMiddleware := &auth.Middleware{
@@ -192,9 +195,24 @@ func run() error {
 		log.Info("auth middleware: enforce mode — Bearer token required")
 	}
 
-	// Dev-token endpoint (only saat APP_ENV != prod). Bypass auth via SkipPaths.
-	if env != "prod" {
-		rootMux.HandleFunc("/v1/auth/dev-token", makeDevTokenHandler(jwtSigner, log))
+	// Dev-token endpoint — gated by 2 layers:
+	//   1. APP_ENV != "prod"
+	//   2. DEV_TOKEN_SECRET env var set + match X-Dev-Secret header dari caller.
+	//
+	// Tanpa secret yang valid, endpoint return 404 (gak leak existence-nya).
+	// Ini menutup attack vector: sebelumnya siapa pun di internet bisa mint
+	// JWT untuk any driver_id. Sekarang butuh shared secret.
+	//
+	// Production: jangan set DEV_TOKEN_SECRET — endpoint disabled total.
+	// Staging demo: set di parkir-secrets ExternalSecret + share ke Postman team.
+	devTokenSecret := getenv("DEV_TOKEN_SECRET", "")
+	if env != "prod" && devTokenSecret != "" {
+		log.Info("dev-token endpoint enabled (secret-gated)")
+		rootMux.HandleFunc("/v1/auth/dev-token", makeDevTokenHandler(jwtSigner, devTokenSecret, log))
+	} else {
+		log.Info("dev-token endpoint DISABLED",
+			zap.String("env", env),
+			zap.Bool("secret_set", devTokenSecret != ""))
 	}
 
 	// ----- Middleware chain -----
@@ -385,8 +403,13 @@ func overrideConfigFromEnv(c ratelimit.Config) ratelimit.Config {
 }
 
 // makeDevTokenHandler — POST /v1/auth/dev-token { driver_id, ttl_sec? }
-// Issue HS256 token untuk testing di Postman. ONLY enabled saat APP_ENV != prod.
-func makeDevTokenHandler(signer *auth.Signer, log *zap.Logger) http.HandlerFunc {
+// Issue HS256 token untuk testing di Postman. Gated by 2 layers:
+//  1. Only registered saat APP_ENV != "prod" + DEV_TOKEN_SECRET set.
+//  2. Request harus include header `X-Dev-Secret: <secret>` yang match
+//     DEV_TOKEN_SECRET. Tanpa header valid, return 404 (gak leak existence).
+//
+// Secret comparison pakai constant-time untuk cegah timing attack.
+func makeDevTokenHandler(signer *auth.Signer, expectedSecret string, log *zap.Logger) http.HandlerFunc {
 	type req struct {
 		DriverID string `json:"driver_id"`
 		TTLSec   int64  `json:"ttl_sec,omitempty"`
@@ -397,6 +420,15 @@ func makeDevTokenHandler(signer *auth.Signer, log *zap.Logger) http.HandlerFunc 
 		Sub       string `json:"sub"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Secret check FIRST — return 404 kalau gak match, supaya attacker
+		// gak tahu endpoint ada.
+		gotSecret := r.Header.Get("X-Dev-Secret")
+		if subtle.ConstantTimeCompare([]byte(gotSecret), []byte(expectedSecret)) != 1 {
+			log.Warn("dev-token: invalid X-Dev-Secret header",
+				zap.String("remote", r.RemoteAddr))
+			http.NotFound(w, r)
+			return
+		}
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return

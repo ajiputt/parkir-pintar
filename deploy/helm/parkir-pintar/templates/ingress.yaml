@@ -5,10 +5,16 @@ metadata:
   name: parkir-gateway
   annotations:
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
-    # Fixed-response action: kembalikan 404 untuk /metrics + /healthz + /readyz.
-    # /metrics: cegah operational metric leak ke public (Prometheus scrape tetap
-    #           via internal ClusterIP, observability namespace).
-    # /healthz, /readyz: internal probes; tidak perlu di-expose.
+    # Fixed-response action: kembalikan 404 untuk /metrics.
+    # Cegah operational metric leak ke public; Prometheus scrape tetap via
+    # internal ClusterIP di namespace observability.
+    #
+    # /healthz dan /readyz SENGAJA tetap public-accessible:
+    #   - ALB target group health check butuh reachable
+    #   - Smoke test post-deploy hit /healthz
+    #   - External uptime monitoring (e.g., UptimeRobot)
+    #   - Tidak ada data leak — cuma 200 OK / 503 status
+    #
     # Lihat ADR-0016 (security posture).
     alb.ingress.kubernetes.io/actions.deny-internal: |
       {"Type":"fixed-response","FixedResponseConfig":{"ContentType":"text/plain","StatusCode":"404","MessageBody":"Not Found"}}
@@ -26,8 +32,8 @@ spec:
       {{- end }}
       http:
         paths:
-          # Priority order: more specific paths first. Exact match untuk
-          # internal endpoint supaya gak masuk ke gateway business handler.
+          # Priority order: more specific path first. Exact match /metrics
+          # supaya gak masuk ke gateway business handler.
           - path: /metrics
             pathType: Exact
             backend:
@@ -35,21 +41,7 @@ spec:
                 name: deny-internal
                 port:
                   name: use-annotation
-          - path: /healthz
-            pathType: Exact
-            backend:
-              service:
-                name: deny-internal
-                port:
-                  name: use-annotation
-          - path: /readyz
-            pathType: Exact
-            backend:
-              service:
-                name: deny-internal
-                port:
-                  name: use-annotation
-          # Catch-all untuk business endpoint (REST /v1/*, /docs, /openapi.json).
+          # Catch-all untuk business endpoint + /healthz + /readyz + /docs.
           - path: /
             pathType: Prefix
             backend:
