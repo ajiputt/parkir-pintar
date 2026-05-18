@@ -186,6 +186,7 @@ func run() error {
 		grpc.ChainUnaryInterceptor(
 			grpcutil.RecoveryUnary(log),
 			grpcutil.RequestIDUnary(),
+			grpcutil.MetricsUnary(),
 			grpcutil.LoggingUnary(log),
 		),
 	)

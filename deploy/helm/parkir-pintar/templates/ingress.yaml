@@ -5,6 +5,13 @@ metadata:
   name: parkir-gateway
   annotations:
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    # Fixed-response action: kembalikan 404 untuk /metrics + /healthz + /readyz.
+    # /metrics: cegah operational metric leak ke public (Prometheus scrape tetap
+    #           via internal ClusterIP, observability namespace).
+    # /healthz, /readyz: internal probes; tidak perlu di-expose.
+    # Lihat ADR-0016 (security posture).
+    alb.ingress.kubernetes.io/actions.deny-internal: |
+      {"Type":"fixed-response","FixedResponseConfig":{"ContentType":"text/plain","StatusCode":"404","MessageBody":"Not Found"}}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   {{- if .Values.ingress.tls.enabled }}
@@ -19,6 +26,30 @@ spec:
       {{- end }}
       http:
         paths:
+          # Priority order: more specific paths first. Exact match untuk
+          # internal endpoint supaya gak masuk ke gateway business handler.
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: deny-internal
+                port:
+                  name: use-annotation
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: deny-internal
+                port:
+                  name: use-annotation
+          - path: /readyz
+            pathType: Exact
+            backend:
+              service:
+                name: deny-internal
+                port:
+                  name: use-annotation
+          # Catch-all untuk business endpoint (REST /v1/*, /docs, /openapi.json).
           - path: /
             pathType: Prefix
             backend:

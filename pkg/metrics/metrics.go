@@ -58,10 +58,33 @@ var (
 			Help: "Current number of in-flight HTTP requests.",
 		},
 	)
+
+	// gRPC metrics — di-emit oleh grpcutil.MetricsUnary interceptor di backend
+	// services (reservation, billing, payment, notification). Mirror HTTP metrics
+	// structure supaya Grafana dashboard bisa share label semantics.
+	GRPCRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "grpc_requests_total",
+			Help: "Total gRPC requests received, grouped by service, method, code.",
+		},
+		[]string{"grpc_service", "grpc_method", "grpc_code"},
+	)
+
+	GRPCRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "grpc_request_duration_seconds",
+			Help:    "gRPC unary handler latency distribution.",
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{"grpc_service", "grpc_method", "grpc_code"},
+	)
 )
 
 func init() {
-	Registry.MustRegister(httpRequestsTotal, httpRequestDuration, httpRequestsInFlight)
+	Registry.MustRegister(
+		httpRequestsTotal, httpRequestDuration, httpRequestsInFlight,
+		GRPCRequestsTotal, GRPCRequestDuration,
+	)
 }
 
 // Handler returns http.Handler untuk endpoint /metrics.

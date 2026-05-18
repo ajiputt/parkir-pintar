@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,6 +36,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/ajiperdana/parkir-pintar/pkg/logger"
+	"github.com/ajiperdana/parkir-pintar/pkg/metrics"
 )
 
 const (
@@ -109,6 +111,44 @@ func IdempotencyKeyFromContext(ctx context.Context) string {
 		return vals[0]
 	}
 	return ""
+}
+
+// MetricsUnary — emit Prometheus counter + histogram per RPC.
+// Labels: grpc_service, grpc_method, grpc_code (OK / NotFound / etc).
+//
+// info.FullMethod format: "/<package>.<Service>/<Method>" — kita split jadi
+// 2 label terpisah supaya Grafana bisa group dengan benar.
+//
+// Pakai bareng RecoveryUnary supaya panic ke-convert dulu jadi Internal code,
+// bukan crash sebelum metric ke-emit.
+func MetricsUnary() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		start := time.Now()
+		resp, err := handler(ctx, req)
+		duration := time.Since(start).Seconds()
+
+		service, method := splitFullMethod(info.FullMethod)
+		code := status.Code(err).String() // "OK" untuk nil error, "NotFound" / etc selainnya
+
+		metrics.GRPCRequestsTotal.WithLabelValues(service, method, code).Inc()
+		metrics.GRPCRequestDuration.WithLabelValues(service, method, code).Observe(duration)
+
+		return resp, err
+	}
+}
+
+// splitFullMethod — "/parkirpintar.reservation.v1.ReservationService/CreateReservation"
+// → ("parkirpintar.reservation.v1.ReservationService", "CreateReservation").
+// Fallback: kalau format aneh, return ("unknown", fullMethod).
+func splitFullMethod(fullMethod string) (service, method string) {
+	if !strings.HasPrefix(fullMethod, "/") {
+		return "unknown", fullMethod
+	}
+	parts := strings.SplitN(fullMethod[1:], "/", 2)
+	if len(parts) != 2 {
+		return "unknown", fullMethod
+	}
+	return parts[0], parts[1]
 }
 
 // TimeoutUnary — set timeout untuk client call.
