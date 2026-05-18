@@ -374,3 +374,142 @@ func TestBreakerUnary_OpensAfterFailures(t *testing.T) {
 	assert.Equal(t, codes.Unavailable, st.Code())
 	assert.Contains(t, st.Message(), "circuit open")
 }
+
+// ---------- MetricsUnary ----------
+
+// errHandler — handler yang return error tertentu (untuk test code label).
+func errHandler(c codes.Code) grpc.UnaryHandler {
+	return func(_ context.Context, _ any) (any, error) {
+		if c == codes.OK {
+			return "ok", nil
+		}
+		return nil, status.Error(c, c.String())
+	}
+}
+
+func TestMetricsUnary_HappyPath_ForwardsResponseAndError(t *testing.T) {
+	interceptor := grpcutil.MetricsUnary()
+
+	// Success path
+	resp, err := interceptor(
+		context.Background(),
+		"req",
+		newUnaryInfo("/parkirpintar.reservation.v1.ReservationService/CreateReservation"),
+		okHandler("hello"),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", resp)
+}
+
+func TestMetricsUnary_ErrorPath_PropagatesError(t *testing.T) {
+	interceptor := grpcutil.MetricsUnary()
+
+	resp, err := interceptor(
+		context.Background(),
+		"req",
+		newUnaryInfo("/svc.Foo/Bar"),
+		errHandler(codes.NotFound),
+	)
+
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.NotFound, st.Code())
+}
+
+// Cover splitFullMethod for normal proto format.
+func TestMetricsUnary_FullMethod_Standard_DoesNotPanic(t *testing.T) {
+	interceptor := grpcutil.MetricsUnary()
+	_, err := interceptor(
+		context.Background(),
+		"req",
+		newUnaryInfo("/parkirpintar.billing.v1.BillingService/IssueInvoice"),
+		okHandler("ok"),
+	)
+	require.NoError(t, err)
+}
+
+// Cover splitFullMethod fallback: no leading slash.
+func TestMetricsUnary_FullMethod_NoSlash_HandledGracefully(t *testing.T) {
+	interceptor := grpcutil.MetricsUnary()
+	_, err := interceptor(
+		context.Background(),
+		"req",
+		newUnaryInfo("malformed-method-name"),
+		okHandler("ok"),
+	)
+	// Should not panic; metric still emitted with fallback label.
+	require.NoError(t, err)
+}
+
+// Cover splitFullMethod fallback: empty after slash.
+func TestMetricsUnary_FullMethod_OnlySlash_HandledGracefully(t *testing.T) {
+	interceptor := grpcutil.MetricsUnary()
+	_, err := interceptor(
+		context.Background(),
+		"req",
+		newUnaryInfo("/"),
+		okHandler("ok"),
+	)
+	require.NoError(t, err)
+}
+
+// Cover splitFullMethod fallback: missing method part after service.
+func TestMetricsUnary_FullMethod_NoSecondSlash_HandledGracefully(t *testing.T) {
+	interceptor := grpcutil.MetricsUnary()
+	_, err := interceptor(
+		context.Background(),
+		"req",
+		newUnaryInfo("/svc.Foo"),
+		okHandler("ok"),
+	)
+	// SplitN returns 1 part, falls back to "unknown" service label.
+	require.NoError(t, err)
+}
+
+// Various error codes — exercise the status.Code() → string conversion.
+func TestMetricsUnary_VariousErrorCodes(t *testing.T) {
+	codeCases := []codes.Code{
+		codes.OK,
+		codes.Canceled,
+		codes.InvalidArgument,
+		codes.NotFound,
+		codes.AlreadyExists,
+		codes.PermissionDenied,
+		codes.Unauthenticated,
+		codes.FailedPrecondition,
+		codes.Unavailable,
+		codes.Internal,
+	}
+	interceptor := grpcutil.MetricsUnary()
+
+	for _, c := range codeCases {
+		t.Run(c.String(), func(t *testing.T) {
+			_, err := interceptor(
+				context.Background(),
+				"req",
+				newUnaryInfo("/svc.Test/Method"),
+				errHandler(c),
+			)
+			if c == codes.OK {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Equal(t, c, status.Code(err))
+			}
+		})
+	}
+}
+
+// Sanity: emit counter + histogram by calling interceptor multiple times.
+// Coverage-wise, this hits the WithLabelValues + Inc + Observe lines.
+func TestMetricsUnary_MultipleInvocations_NoSideEffects(t *testing.T) {
+	interceptor := grpcutil.MetricsUnary()
+	marker := "/test.marker.v1.MarkerSvc/RepeatedOp"
+	for i := 0; i < 5; i++ {
+		resp, err := interceptor(context.Background(), "req", newUnaryInfo(marker), okHandler("ok"))
+		require.NoError(t, err)
+		assert.Equal(t, "ok", resp)
+	}
+}
