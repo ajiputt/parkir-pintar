@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+//go:generate mockgen -package=mock_lock -source=lock.go -destination=../_mock/lock/lock_mock.go
+
 // Locker abstraction. Implementasi harus thread-safe.
 type Locker interface {
 	// Acquire mencoba lock dengan TTL. ok=false kalau gagal (sudah dipegang).

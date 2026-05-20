@@ -22,6 +22,8 @@ type OverdueWorker struct {
 	Logger      *zap.Logger
 }
 
+//go:generate mockgen -package=mock_usecase -source=overdue_worker.go -destination=../../_mock/usecase/overdue_worker_mock.go
+
 // OverdueInvoiceRepo — port subset, hanya yang dibutuhkan worker.
 type OverdueInvoiceRepo interface {
 	FindOverdueCandidates(ctx context.Context, issuedBefore time.Time, limit int) ([]*domain.Invoice, error)

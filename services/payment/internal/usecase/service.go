@@ -15,6 +15,8 @@ import (
 	"github.com/ajiperdana/parkir-pintar/services/payment/internal/domain"
 )
 
+//go:generate mockgen -package=mock_usecase -source=service.go -destination=../../_mock/usecase/service_mock.go
+
 // Repo — payment persistence port.
 type Repo interface {
 	Save(ctx context.Context, p *domain.Payment) error

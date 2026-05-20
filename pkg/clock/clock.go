@@ -4,6 +4,8 @@ package clock
 
 import "time"
 
+//go:generate mockgen -package=mock_clock -source=clock.go -destination=../_mock/clock/clock_mock.go
+
 // Clock interface untuk dependency injection waktu.
 type Clock interface {
 	Now() time.Time

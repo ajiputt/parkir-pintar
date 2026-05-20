@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+//go:generate mockgen -package=mock_eventbus -source=eventbus.go -destination=../_mock/eventbus/eventbus_mock.go
+
 // Envelope — event envelope dengan metadata yang konsisten.
 type Envelope struct {
 	ID            string            `json:"id"`             // UUID, untuk dedup di consumer

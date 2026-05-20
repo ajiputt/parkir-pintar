@@ -13,6 +13,8 @@ import (
 
 // ----- Ports (interfaces yang dibutuhkan usecase) -----
 
+//go:generate mockgen -package=mock_usecase -source=ports.go -destination=../../_mock/usecase/ports_mock.go
+
 // ReservationRepo — persistence reservation.
 type ReservationRepo interface {
 	// Create simpan reservation baru. Adapter map unique violation (23505) dari

@@ -32,6 +32,8 @@ type Record struct {
 	ExpiresAt      time.Time
 }
 
+//go:generate mockgen -package=mock_idempotency -source=store.go -destination=../_mock/idempotency/store_mock.go
+
 // Store — interface yang harus diimplement adapter (Postgres, Redis).
 type Store interface {
 	// Begin mencoba registrasi key. Return:

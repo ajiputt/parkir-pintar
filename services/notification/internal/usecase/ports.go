@@ -12,6 +12,8 @@ import (
 	"github.com/ajiperdana/parkir-pintar/services/notification/internal/domain"
 )
 
+//go:generate mockgen -package=mock_usecase -source=ports.go -destination=../../_mock/usecase/ports_mock.go
+
 // ContactRepo — port lookup user contact by driver_id.
 type ContactRepo interface {
 	GetByDriverID(ctx context.Context, driverID string) (*domain.Contact, error)

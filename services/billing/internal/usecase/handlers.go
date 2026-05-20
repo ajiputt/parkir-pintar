@@ -12,6 +12,8 @@ import (
 	"github.com/ajiperdana/parkir-pintar/services/billing/internal/domain"
 )
 
+//go:generate mockgen -package=mock_usecase -source=handlers.go -destination=../../_mock/usecase/handlers_mock.go
+
 // InvoiceRepo — persistence port.
 type InvoiceRepo interface {
 	GetByReservationID(ctx context.Context, reservationID uuid.UUID) (*domain.Invoice, error)

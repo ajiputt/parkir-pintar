@@ -142,6 +142,8 @@ func DBCheck(name string, pool *pgxpool.Pool) Check {
 	}
 }
 
+//go:generate mockgen -package=mock_health -source=health.go -destination=../_mock/health/health_mock.go
+
 // PingableCheck — generic check untuk anything dengan Ping(ctx) error method.
 //
 // Cocok untuk Redis (go-redis Cmdable.Ping), NATS (jetstream.Conn.Status),

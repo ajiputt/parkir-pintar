@@ -28,7 +28,7 @@ tools: ## Install dev tools (buf, protoc-gen-go, golangci-lint, mockgen, sqlc, m
 	$(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.20.0
 	$(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.20.0
 	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
-	$(GO) install go.uber.org/mock/mockgen@v0.4.0
+	$(GO) install go.uber.org/mock/mockgen@v0.6.0
 	$(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
 	$(GO) install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.1
 
