@@ -53,20 +53,7 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 		return nil, fmt.Errorf("tracing: init resource: %w", err)
 	}
 
-	ratio := cfg.SamplerRatio
-	if ratio <= 0 {
-		ratio = 0.1 // default 10% di prod
-	}
-	if cfg.Env == "dev" {
-		ratio = 1.0
-	}
-	// Env var override — supaya bisa boost sampling rate tanpa rebuild.
-	// e.g., OTEL_TRACES_SAMPLER_RATIO=1.0 → trace semuanya (untuk demo).
-	if v := os.Getenv("OTEL_TRACES_SAMPLER_RATIO"); v != "" {
-		if r, err := strconv.ParseFloat(v, 64); err == nil && r >= 0 && r <= 1 {
-			ratio = r
-		}
-	}
+	ratio := resolveSamplerRatio(cfg, os.Getenv)
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exp,
@@ -84,4 +71,31 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 	))
 
 	return tp.Shutdown, nil
+}
+
+// resolveSamplerRatio menghitung sampling ratio final dari config + env override.
+// Di-extract dari Init() supaya bisa unit-test tanpa init OTLP exporter beneran.
+//
+// Precedence (later wins):
+//  1. cfg.SamplerRatio (default 0.1 kalau <= 0)
+//  2. Env=="dev" → force 1.0
+//  3. OTEL_TRACES_SAMPLER_RATIO env var → override (kalau valid [0..1])
+//
+// getEnv parameter di-inject biar test bisa pakai stub (tidak depend ke os.Getenv).
+func resolveSamplerRatio(cfg Config, getEnv func(string) string) float64 {
+	ratio := cfg.SamplerRatio
+	if ratio <= 0 {
+		ratio = 0.1 // default 10% di prod
+	}
+	if cfg.Env == "dev" {
+		ratio = 1.0
+	}
+	// Env var override — supaya bisa boost sampling rate tanpa rebuild.
+	// e.g., OTEL_TRACES_SAMPLER_RATIO=1.0 → trace semuanya (untuk demo).
+	if v := getEnv("OTEL_TRACES_SAMPLER_RATIO"); v != "" {
+		if r, err := strconv.ParseFloat(v, 64); err == nil && r >= 0 && r <= 1 {
+			ratio = r
+		}
+	}
+	return ratio
 }
