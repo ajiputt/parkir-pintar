@@ -1,0 +1,1218 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "common/v1/types.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "BillingService"
+    },
+    {
+      "name": "NotificationService"
+    },
+    {
+      "name": "PaymentService"
+    },
+    {
+      "name": "PresenceService"
+    },
+    {
+      "name": "ReservationService"
+    },
+    {
+      "name": "SearchService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/availability": {
+      "get": {
+        "summary": "GetAvailability — return realtime count per floor \u0026 vehicle type.",
+        "operationId": "ReservationService_GetAvailability",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAvailabilityResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parkingAreaId",
+            "description": "optional, default ke \"main\"",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ReservationService"
+        ]
+      }
+    },
+    "/v1/drivers/{driverId}/overdue-count": {
+      "get": {
+        "summary": "CountOverdueByDriver — dipakai reservation service untuk pre-check apakah\ndriver punya tagihan tertunggak (block booking baru).",
+        "operationId": "BillingService_CountOverdueByDriver",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CountOverdueByDriverResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "driverId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/v1/invoices/{id}": {
+      "get": {
+        "summary": "GetInvoice — return invoice + line items.",
+        "operationId": "BillingService_GetInvoice",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Invoice"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/v1/invoices/{id}:mark-paid": {
+      "post": {
+        "operationId": "BillingService_MarkPaid",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Invoice"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BillingServiceMarkPaidBody"
+            }
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/v1/invoices:issue": {
+      "post": {
+        "summary": "IssueInvoice — manual issue (biasanya event-driven, tapi expose untuk admin/debug).",
+        "operationId": "BillingService_IssueInvoice",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Invoice"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1IssueInvoiceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/v1/notifications:send": {
+      "post": {
+        "operationId": "NotificationService_SendNotification",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SendNotificationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SendNotificationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationService"
+        ]
+      }
+    },
+    "/v1/payments": {
+      "post": {
+        "summary": "CreatePayment — generate QRIS untuk invoice.",
+        "operationId": "PaymentService_CreatePayment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Payment"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreatePaymentRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PaymentService"
+        ]
+      }
+    },
+    "/v1/payments/{id}": {
+      "get": {
+        "operationId": "PaymentService_GetPayment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Payment"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PaymentService"
+        ]
+      }
+    },
+    "/v1/reservations": {
+      "post": {
+        "summary": "CreateReservation — booking. Wajib idempotent (header x-idempotency-key).",
+        "operationId": "ReservationService_CreateReservation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateReservationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateReservationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ReservationService"
+        ]
+      }
+    },
+    "/v1/reservations/{id}": {
+      "get": {
+        "operationId": "ReservationService_GetReservation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Reservation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ReservationService"
+        ]
+      }
+    },
+    "/v1/reservations/{id}:cancel": {
+      "post": {
+        "operationId": "ReservationService_CancelReservation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Reservation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ReservationServiceCancelReservationBody"
+            }
+          }
+        ],
+        "tags": [
+          "ReservationService"
+        ]
+      }
+    },
+    "/v1/reservations/{id}:checkin": {
+      "post": {
+        "operationId": "ReservationService_CheckIn",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Reservation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ReservationServiceCheckInBody"
+            }
+          }
+        ],
+        "tags": [
+          "ReservationService"
+        ]
+      }
+    },
+    "/v1/reservations/{id}:checkout": {
+      "post": {
+        "operationId": "ReservationService_CheckOut",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Reservation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ReservationServiceCheckOutBody"
+            }
+          }
+        ],
+        "tags": [
+          "ReservationService"
+        ]
+      }
+    },
+    "/v1/reservations/{reservationId}/invoice": {
+      "get": {
+        "operationId": "BillingService_GetInvoiceByReservation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Invoice"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "reservationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/v1/search/spots": {
+      "get": {
+        "operationId": "SearchService_QuerySpots",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QuerySpotsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "VEHICLE_TYPE_UNSPECIFIED",
+              "CAR",
+              "MOTOR"
+            ],
+            "default": "VEHICLE_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "preferredFloor",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SearchService"
+        ]
+      }
+    },
+    "/v1/spots": {
+      "get": {
+        "summary": "ListSpots — list spot dengan filter.",
+        "operationId": "ReservationService_ListSpots",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSpotsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "floorLevel",
+            "description": "Filter ke 1 floor saja (optional). Kalau set, response cuma 1 entry di floors[].",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "vehicleType",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "VEHICLE_TYPE_UNSPECIFIED",
+              "CAR",
+              "MOTOR"
+            ],
+            "default": "VEHICLE_TYPE_UNSPECIFIED"
+          },
+          {
+            "name": "status",
+            "description": "Default = AVAILABLE kalau tidak di-set (use case utamanya driver cari spot kosong).",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SPOT_STATUS_UNSPECIFIED",
+              "AVAILABLE",
+              "HELD",
+              "OCCUPIED",
+              "OUT_OF_SERVICE"
+            ],
+            "default": "SPOT_STATUS_UNSPECIFIED"
+          }
+        ],
+        "tags": [
+          "ReservationService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "BillingServiceMarkPaidBody": {
+      "type": "object",
+      "properties": {
+        "paymentId": {
+          "type": "string"
+        }
+      }
+    },
+    "ReservationServiceCancelReservationBody": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
+      "title": "---- CancelReservation ----"
+    },
+    "ReservationServiceCheckInBody": {
+      "type": "object",
+      "title": "---- CheckIn ----"
+    },
+    "ReservationServiceCheckOutBody": {
+      "type": "object",
+      "title": "---- CheckOut ----"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1AssignmentMode": {
+      "type": "string",
+      "enum": [
+        "ASSIGNMENT_MODE_UNSPECIFIED",
+        "SYSTEM",
+        "USER"
+      ],
+      "default": "ASSIGNMENT_MODE_UNSPECIFIED",
+      "description": " - SYSTEM: Sistem assign otomatis spot tercepat (default).\n - USER: User pilih spot spesifik (potensi kontensi)."
+    },
+    "v1BillingMode": {
+      "type": "string",
+      "enum": [
+        "BILLING_MODE_UNSPECIFIED",
+        "AUTO",
+        "MANUAL"
+      ],
+      "default": "BILLING_MODE_UNSPECIFIED",
+      "description": "BillingMode — payment behavior saat reservation di-finalize.\n\nLihat ADR-0014 (hybrid payment).\n\n - AUTO: AUTO: saldo wallet auto-debit saat invoice ISSUED. No QRIS step.\nCocok untuk driver dengan saldo pre-loaded.\n - MANUAL: MANUAL: driver harus call CreatePayment + scan QRIS. Invoice tetap ISSUED\nsampai webhook Midtrans datang. Bisa OVERDUE kalau driver tidak bayar."
+    },
+    "v1Channel": {
+      "type": "string",
+      "enum": [
+        "CHANNEL_UNSPECIFIED",
+        "CHANNEL_PUSH",
+        "CHANNEL_EMAIL",
+        "CHANNEL_SMS"
+      ],
+      "default": "CHANNEL_UNSPECIFIED"
+    },
+    "v1CountOverdueByDriverResponse": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1CreatePaymentRequest": {
+      "type": "object",
+      "properties": {
+        "invoiceId": {
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/definitions/v1PaymentMethod"
+        }
+      }
+    },
+    "v1CreateReservationRequest": {
+      "type": "object",
+      "properties": {
+        "driverId": {
+          "type": "string"
+        },
+        "plateNo": {
+          "type": "string"
+        },
+        "vehicleType": {
+          "$ref": "#/definitions/v1VehicleType"
+        },
+        "mode": {
+          "$ref": "#/definitions/v1AssignmentMode"
+        },
+        "spotId": {
+          "type": "string",
+          "description": "Wajib jika mode = USER (driver pilih spot spesifik).\nUntuk SYSTEM, sistem assign spot kosong dengan floor terendah."
+        },
+        "startAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Expected arrival time. Hold expiry = start_at + holdDuration (default 1h).\nDriver harus check-in sebelum expiry — kalau tidak, reservation auto-cancelled\ndan akan dikenakan no-show penalty 5000 IDR.\nKalau kosong, server pakai now() (booking instant)."
+        },
+        "paymentMode": {
+          "$ref": "#/definitions/v1BillingMode",
+          "description": "Payment mode (REQUIRED). AUTO = wallet auto-debit. MANUAL = QRIS scan.\nLihat ADR-0014 untuk hybrid model."
+        }
+      },
+      "title": "---- CreateReservation ----"
+    },
+    "v1CreateReservationResponse": {
+      "type": "object",
+      "properties": {
+        "reservation": {
+          "$ref": "#/definitions/v1Reservation"
+        },
+        "bookingFee": {
+          "$ref": "#/definitions/v1Money",
+          "description": "Booking fee yang akan ditagih (5000 IDR, sesuai use case)."
+        }
+      }
+    },
+    "v1FloorAvailability": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "carAvailable": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "carCapacity": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "motorAvailable": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "motorCapacity": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1FloorSpots": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "spots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Spot"
+          }
+        },
+        "capacity": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Convenience metadata untuk UI: count ini bisa beda dari spots.length kalau\nfilter status di-apply (mis. capacity 30 tapi available cuma 5).\n\ntotal spot di floor (untuk vehicle_type kalau filter set)"
+        },
+        "available": {
+          "type": "integer",
+          "format": "int32",
+          "title": "count yang status=AVAILABLE"
+        }
+      },
+      "description": "FloorSpots — bundled spots untuk satu lantai."
+    },
+    "v1GetAvailabilityResponse": {
+      "type": "object",
+      "properties": {
+        "parkingAreaId": {
+          "type": "string"
+        },
+        "parkingAreaName": {
+          "type": "string"
+        },
+        "totalCarAvailable": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalMotorAvailable": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "floors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FloorAvailability"
+          }
+        },
+        "asOf": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1HintType": {
+      "type": "string",
+      "enum": [
+        "HINT_TYPE_UNSPECIFIED",
+        "HINT_TYPE_ENTERED_GEOFENCE",
+        "HINT_TYPE_EXITED_GEOFENCE",
+        "HINT_TYPE_NEAR_PARKING"
+      ],
+      "default": "HINT_TYPE_UNSPECIFIED"
+    },
+    "v1Invoice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "reservationId": {
+          "type": "string"
+        },
+        "driverId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1InvoiceStatus"
+        },
+        "total": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1InvoiceItem"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "paidAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "overdueAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "paymentMode": {
+          "$ref": "#/definitions/v1BillingMode",
+          "description": "payment_mode di-forward dari reservation (AUTO atau MANUAL).\nAUTO → payment service auto-charge. MANUAL → driver manual scan QRIS."
+        }
+      }
+    },
+    "v1InvoiceItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/v1LineItemType"
+        },
+        "description": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date-time",
+          "title": "optional (untuk hourly)"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1InvoiceStatus": {
+      "type": "string",
+      "enum": [
+        "INVOICE_STATUS_UNSPECIFIED",
+        "DRAFT",
+        "ISSUED",
+        "PAID",
+        "VOID",
+        "OVERDUE"
+      ],
+      "default": "INVOICE_STATUS_UNSPECIFIED",
+      "description": " - DRAFT: sebelum reservation checkout\n - ISSUED: siap dibayar\n - OVERDUE: OVERDUE — invoice ISSUED tapi driver MANUAL mode tidak bayar dalam grace\nperiod. Lihat ADR-0014. Setelah OVERDUE, driver akan di-block dari booking\nbaru sampai bayar."
+    },
+    "v1IssueInvoiceRequest": {
+      "type": "object",
+      "properties": {
+        "reservationId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1LineItemType": {
+      "type": "string",
+      "enum": [
+        "LINE_ITEM_TYPE_UNSPECIFIED",
+        "BOOKING_FEE",
+        "HOURLY",
+        "OVERNIGHT",
+        "NO_SHOW_PENALTY"
+      ],
+      "default": "LINE_ITEM_TYPE_UNSPECIFIED",
+      "title": "- BOOKING_FEE: 5000 IDR per reservation\n - HOURLY: 5000 IDR per started hour\n - OVERNIGHT: 20000 IDR flat\n - NO_SHOW_PENALTY: 5000 IDR"
+    },
+    "v1ListSpotsResponse": {
+      "type": "object",
+      "properties": {
+        "floors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FloorSpots"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Total spot match filter (sum dari semua floors[].spots length)."
+        }
+      }
+    },
+    "v1Money": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "string",
+          "format": "int64",
+          "description": "Amount in IDR (smallest unit = 1 IDR; tidak ada subdivisi)."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency code, e.g. \"IDR\"."
+        }
+      },
+      "description": "Money — value object Rupiah, integer (no float)."
+    },
+    "v1Payment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "invoiceId": {
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/definitions/v1PaymentMethod"
+        },
+        "gateway": {
+          "type": "string",
+          "title": "\"MIDTRANS\""
+        },
+        "gatewayRef": {
+          "type": "string",
+          "title": "transaction_id dari gateway"
+        },
+        "qrString": {
+          "type": "string",
+          "title": "raw QRIS payload untuk render"
+        },
+        "amount": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "status": {
+          "$ref": "#/definitions/v1PaymentStatus"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "settledAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "qrUrl": {
+          "type": "string",
+          "title": "Midtrans actions[generate-qr-code].url — public QR image URL"
+        }
+      }
+    },
+    "v1PaymentMethod": {
+      "type": "string",
+      "enum": [
+        "PAYMENT_METHOD_UNSPECIFIED",
+        "QRIS"
+      ],
+      "default": "PAYMENT_METHOD_UNSPECIFIED"
+    },
+    "v1PaymentStatus": {
+      "type": "string",
+      "enum": [
+        "PAYMENT_STATUS_UNSPECIFIED",
+        "PENDING",
+        "SUCCESS",
+        "FAILED",
+        "EXPIRED"
+      ],
+      "default": "PAYMENT_STATUS_UNSPECIFIED",
+      "description": " - EXPIRED: Note: same identifier \"EXPIRED\" exists in common.v1.ReservationState — beda\npackage, jadi tidak collision."
+    },
+    "v1PresenceHint": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/v1HintType"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1QuerySpotsResponse": {
+      "type": "object",
+      "properties": {
+        "spots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Spot"
+          }
+        }
+      }
+    },
+    "v1Reservation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "driverId": {
+          "type": "string"
+        },
+        "spot": {
+          "$ref": "#/definitions/v1Spot"
+        },
+        "plateNo": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/v1ReservationState"
+        },
+        "startAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Expected arrival time (default = now untuk booking instant)."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Hold deadline = start_at + holdDuration (default 1h). Lewat ini auto-cancel."
+        },
+        "checkinAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checkoutAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "assignmentMode": {
+          "$ref": "#/definitions/v1AssignmentMode"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "paymentMode": {
+          "$ref": "#/definitions/v1BillingMode"
+        }
+      }
+    },
+    "v1ReservationState": {
+      "type": "string",
+      "enum": [
+        "RESERVATION_STATE_UNSPECIFIED",
+        "CONFIRMED",
+        "CHECKED_IN",
+        "CHECKED_OUT",
+        "CANCELLED",
+        "EXPIRED"
+      ],
+      "default": "RESERVATION_STATE_UNSPECIFIED"
+    },
+    "v1SendNotificationRequest": {
+      "type": "object",
+      "properties": {
+        "driverId": {
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/definitions/v1Channel"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1SendNotificationResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "dispatched": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1Spot": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "title": "mis. \"F2-C-007\" = floor 2, car, slot 7"
+        },
+        "floorLevel": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "vehicleType": {
+          "$ref": "#/definitions/v1VehicleType"
+        },
+        "status": {
+          "$ref": "#/definitions/v1SpotStatus"
+        }
+      }
+    },
+    "v1SpotStatus": {
+      "type": "string",
+      "enum": [
+        "SPOT_STATUS_UNSPECIFIED",
+        "AVAILABLE",
+        "HELD",
+        "OCCUPIED",
+        "OUT_OF_SERVICE"
+      ],
+      "default": "SPOT_STATUS_UNSPECIFIED"
+    },
+    "v1VehicleType": {
+      "type": "string",
+      "enum": [
+        "VEHICLE_TYPE_UNSPECIFIED",
+        "CAR",
+        "MOTOR"
+      ],
+      "default": "VEHICLE_TYPE_UNSPECIFIED"
+    },
+    "v1WebhookResponse": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

@@ -61,13 +61,38 @@ push/PR main → pipeline.yml:
                           all converge
                           │
                           └─ build-images (push only on main)
-                                  └─ deploy-staging (push only on main)
+                                  └─ deploy-staging (main only, MANUAL approval gate)
                                   └─ pipeline-result (always — aggregate signal)
 ```
 
 ### Single required check for branch protection
 
 `pipeline-result` job aggregate semua gate status jadi 1 pass/fail signal. Branch protection cuma butuh require **1 check**: `Pipeline / Pipeline Result`. Simpler audit story — 1 source of truth (code), bukan 6-7 checkbox di UI.
+
+### Deploy gate — manual approval via GitHub Environments
+
+`deploy-staging` job IS declared di pipeline.yml (bukan di workflow terpisah), tapi pause di **Environment protection rule** sampai operator approve.
+
+**Pattern**: Job declare `environment: staging` → GitHub cek environment config di repo settings → kalau ada "Required reviewers", job stuck di "Waiting" state → reviewer dapat email + Actions UI tunjukin "Review deployments" button → klik Approve → job lanjut.
+
+**Setup (one-time, manual via GitHub UI)**:
+
+1. Repo → Settings → Environments → New environment: `staging`
+2. Required reviewers: tambah username sendiri (atau team)
+3. (Optional) Wait timer: `0 min` — no forced delay
+4. (Optional) Deployment branches: restrict ke `main` only
+
+Pattern yang sama berlaku untuk `production` environment di future (deploy ke prod butuh approval terpisah, possibly dari role yang berbeda).
+
+**Kenapa pattern ini lebih bagus dari workflow_dispatch terpisah**:
+
+- ✅ Single workflow run di Actions UI — full lineage visible (commit → tests → security → sonar → build → deploy approval → deployed).
+- ✅ Image tag auto-passed dari `build-images` output (no manual entry).
+- ✅ Audit trail otomatis: GitHub log siapa approve + timestamp.
+- ✅ Email notification ke reviewer otomatis.
+- ✅ Multiple environments handled sama (staging + prod = beda environment config, sama job code).
+
+**Trade-off**: Setup environment di Settings UI bukan di code. Ini convention GitHub yang tidak bisa di-bypass — kompensasi: setup sekali, jalan terus.
 
 ## Trade-offs
 

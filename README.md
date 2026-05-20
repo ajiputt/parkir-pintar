@@ -7,7 +7,7 @@
 | **Author** | Aji Perdana Putra (`ajiperdanaputra90@gmail.com`) |
 | **Domain** | Smart Parking Marketplace (single area, 5 floors, 150 mobil + 250 motor) |
 | **Status** | Assessment H1 2026 — Senior Backend Developer |
-| **Stack** | Go 1.22, gRPC, grpc-gateway, PostgreSQL 16, Redis 7, NATS JetStream, OpenTelemetry, Prometheus, Jaeger |
+| **Stack** | Go 1.26, gRPC, grpc-gateway, PostgreSQL 16, Redis 7, NATS JetStream, OpenTelemetry, Prometheus, Grafana, Loki, Tempo |
 | **License** | Internal — assessment only |
 
 ---
@@ -15,19 +15,21 @@
 ## Daftar Isi
 
 1. [Ringkasan Solusi](#1-ringkasan-solusi)
-2. [High Level Design (HLD)](#2-high-level-design-hld)
-3. [Low Level Design (LLD)](#3-low-level-design-lld)
-4. [Entity Relationship Diagram (ERD)](#4-entity-relationship-diagram-erd)
-5. [Reusable Components](#5-reusable-components)
-6. [Resilience, Consistency & Idempotency](#6-resilience-consistency--idempotency)
-7. [Pricing Engine](#7-pricing-engine)
-8. [Testing Strategy](#8-testing-strategy)
-9. [Quick Start (Demo)](#9-quick-start-demo)
-10. [Deployment Options](#10-deployment-options)
-11. [Observability](#11-observability)
-12. [Security](#12-security)
-13. [Architecture Decision Records](#13-architecture-decision-records)
-14. [Roadmap & Trade-offs](#14-roadmap--trade-offs)
+2. [Production-Ready Engineering — "Done Right" Philosophy](#2-production-ready-engineering)
+3. [High Level Design (HLD)](#3-high-level-design-hld)
+4. [Low Level Design (LLD)](#4-low-level-design-lld)
+5. [Entity Relationship Diagram (ERD)](#5-entity-relationship-diagram-erd)
+6. [Reusable Components](#6-reusable-components)
+7. [Resilience, Consistency & Idempotency](#7-resilience-consistency--idempotency)
+8. [Pricing Engine](#8-pricing-engine)
+9. [Testing Strategy](#9-testing-strategy)
+10. [Quick Start (Demo)](#10-quick-start-demo)
+11. [Deployment Options](#11-deployment-options)
+12. [Observability](#12-observability)
+13. [Security](#13-security)
+14. [Architecture Decision Records](#14-architecture-decision-records)
+15. [Roadmap & Trade-offs](#15-roadmap--trade-offs)
+16. [Operational Documentation](#16-operational-documentation)
 
 ---
 
@@ -53,7 +55,118 @@ ParkirPintar adalah backend microservices untuk **satu** parking area terpusat (
 
 ---
 
-## 2. High Level Design (HLD)
+## 2. Production-Ready Engineering
+
+> "From 'working code' to 'production-ready code'. Shift from 'Done' to 'Done Right' mindset."
+
+ParkirPintar bukan sekadar proof-of-concept yang demonstrate fitur — tapi sistem yang **defensible secara production**. Section ini highlight engineering maturity yang membedakan project ini dari typical assessment submission.
+
+### 2.1 Architectural Decision Records (ADRs) — Decisions, not just code
+
+Project ini punya **23 ADRs** di [`docs/architecture/adr/`](docs/architecture/adr/) yang document *kenapa* di balik *apa*. Setiap keputusan signifikan punya trade-off analysis written down, bukan tribal knowledge:
+
+| ADR | What | Why it matters |
+|---|---|---|
+| [0001](docs/architecture/adr/0001-microservices-vs-monolith.md) | Microservices over monolith | Justification dengan cost analysis |
+| [0005](docs/architecture/adr/0005-nats-jetstream.md) | NATS JetStream untuk event bus | Vs Kafka/RabbitMQ trade-off |
+| [0009](docs/architecture/adr/0009-defer-search-presence-services.md) | Defer search + presence | Honest scope management |
+| [0011](docs/architecture/adr/0011-anti-overlap-strategy.md) | DB-enforced invariants | Anti double-booking defense in depth |
+| [0014](docs/architecture/adr/0014-hybrid-payment-overdue-blocking.md) | Graceful degradation policy | When billing service down, don't block driver |
+| [0016](docs/architecture/adr/0016-security-posture.md) | Auth + secret management | External Secrets Operator + JWT lifecycle |
+| [0017](docs/architecture/adr/0017-deployment-eks.md) | EKS deployment topology | Multi-AZ, HPA, NetworkPolicy |
+| [0018](docs/architecture/adr/0018-lint-quality-gate-strategy.md) | Quality gates (75% coverage, lint clean) | Mechanical enforcement, not guidelines |
+| [0019](docs/architecture/adr/0019-ci-pipeline-architecture.md) | Reusable CI workflows | DRY pipeline composition |
+| [0020](docs/architecture/adr/0020-test-doubles-strategy.md) | Fakes-first test doubles | Honest engineering vs strict boilerplate |
+| [0021](docs/architecture/adr/0021-saga-pattern.md) | Choreography Saga via NATS | Distributed transaction pattern |
+| [0022](docs/architecture/adr/0022-observability-stack.md) | Prometheus + Grafana + Loki + Tempo | Self-hosted observability rationale |
+| [0023](docs/architecture/adr/0023-otel-sampling-strategy.md) | Head-based sampling per-env | Cost-effective trace coverage |
+
+**Talking point**: Reviewer bisa lihat **decision-making process**, bukan hanya outcome. ADRs document trade-offs yang ditolak (vs alternatif yang dipilih), referensi industry sources, dan link ke implementation files.
+
+### 2.2 Defense in Depth — Multiple Security Layers
+
+| Layer | Mechanism | Reference |
+|---|---|---|
+| Network | ALB Ingress rules block `/metrics`, `/healthz`, `/readyz`, `/docs`, `/openapi.json` dari public | [ADR-0016](docs/architecture/adr/0016-security-posture.md) |
+| Auth | Strict JWT verification (auth bypass closed), per-endpoint role check | gateway middleware |
+| Rate Limit | Per-IP per-endpoint-tier (light/medium/heavy/webhook) | [ADR-0015](docs/architecture/adr/0015-distributed-rate-limiting.md) |
+| Idempotency | Postgres-backed store, Stripe-compatible header pattern | [docs/api/idempotency.md](docs/api/idempotency.md) |
+| Concurrency | Redis Redlock + Postgres unique partial index | [ADR-0011](docs/architecture/adr/0011-postgres-unique-constraints.md) |
+| Secrets | External Secrets Operator → AWS Secrets Manager, no plaintext di repo | [ADR-0016](docs/architecture/adr/0016-security-posture.md) |
+| Scanning | Trivy (image) + gosec (SAST) + govulncheck + gitleaks (secrets) | `.github/workflows/_security.yml` |
+| Webhook | Midtrans signature verification (sha512 HMAC) | `services/payment/internal/adapter/midtrans/` |
+
+### 2.3 Observability Stack — Full O11y, not just `actuator/health`
+
+| Pillar | Implementation | UI |
+|---|---|---|
+| Metrics | Prometheus scrape via `/metrics` endpoint, kube-prometheus-stack chart | Grafana ParkirPintar Overview dashboard |
+| Logs | Loki dengan Promtail agent, structured JSON logging via `zap` | Grafana Explore (Loki) |
+| Traces | OpenTelemetry → Tempo, full cross-service propagation (HTTP + gRPC) | Grafana Explore (Tempo) |
+| Alerting | Grafana unified alerting → Slack webhook integration | `#alert-parkir-pintar` channel |
+| Cross-pillar | Trace → Logs link, Trace → Metrics link configured | Grafana datasources jsonData |
+
+Custom dashboards + alerts code-as-config di `deploy/observability/grafana-dashboards/`.
+
+### 2.4 Quality Gates — Mechanically Enforced
+
+Per [ADR-0018](docs/architecture/adr/0018-lint-quality-gate-strategy.md), quality bukan opinion-based:
+
+| Gate | Threshold | CI step |
+|---|---|---|
+| Unit test coverage | ≥ 75% | `make unit-test-coverage` → Sonar |
+| Lint clean (18 issues fixed) | 0 issues | `make lint` |
+| Cyclomatic complexity | ≤ 15 | `gocyclo` |
+| Cognitive complexity | ≤ 15 | `gocognit` |
+| Code duplication | ≤ 3% | Sonar |
+| Critical security findings | 0 | Trivy + gosec + gitleaks + govulncheck |
+| Proto breaking changes | Auto-blocked | `buf breaking` |
+
+### 2.5 Production-Grade DevOps
+
+| Concern | Implementation |
+|---|---|
+| Multi-stage Docker | Distroless final image, < 50 MB |
+| Kubernetes orchestration | AWS EKS dengan Helm chart, HPA, NetworkPolicy |
+| Reusable CI workflows | 5 workflow modules + orchestrator [ADR-0019](docs/architecture/adr/0019-ci-pipeline-architecture.md) |
+| Database migrations | golang-migrate dengan up/down scripts, schema-per-service |
+| Cost optimization | `aws-sleep` / `aws-wake` scripts untuk dev environment hibernation |
+| Secret rotation | Quarterly procedure documented di [docs/runbooks/secret-rotation.md](docs/runbooks/secret-rotation.md) |
+
+### 2.6 Operational Runbooks — On-Call Ready
+
+Lima runbook di [`docs/runbooks/`](docs/runbooks/) untuk common incidents:
+
+- [high-error-rate.md](docs/runbooks/high-error-rate.md) — gRPC error rate > 5%
+- [db-connection-saturated.md](docs/runbooks/db-connection-saturated.md) — connection pool exhausted
+- [nats-stream-lag.md](docs/runbooks/nats-stream-lag.md) — consumer lag growing
+- [pod-crashloop.md](docs/runbooks/pod-crashloop.md) — CrashLoopBackOff diagnosis
+- [secret-rotation.md](docs/runbooks/secret-rotation.md) — quarterly secret rotation procedure
+
+### 2.7 Honest Engineering — Documented Trade-offs
+
+Beberapa keputusan yang **tidak** mengikuti "best practice" populer, tapi defensible dengan reasoning:
+
+- **Fakes over generated mocks** ([ADR-0020](docs/architecture/adr/0020-test-doubles-strategy.md)) — fakes better untuk stateful business workflows, mocks infrastructure available untuk future
+- **Search + Presence di-defer** ([ADR-0009](docs/architecture/adr/0009-defer-search-presence-services.md)) — YAGNI applied, proto contracts preserved
+- **NATS over Kafka** ([ADR-0006](docs/architecture/adr/0006-event-driven-nats.md)) — operational simplicity untuk current scale
+- **Postgres unique constraint as last-line defense** ([ADR-0011](docs/architecture/adr/0011-postgres-unique-constraints.md)) — Redis lock first, DB constraint second, dual-layer safety
+
+> **Engineering maturity** bukan checking off best practices — tapi knowing **kapan apply, kapan deviate, kapan defer**, dengan reasoning yang documented.
+
+### 2.8 Continuous Improvement Mindset
+
+| Recent improvements | Driver |
+|---|---|
+| Migrate ke reusable CI workflows | Reduce 5 duplicated pipelines [ADR-0019] |
+| Add comprehensive observability | Address production debugging gaps |
+| Hexagonal architecture refinement | Better testability + adapter swap |
+| Strict auth mode + ALB rules | Close attack surface |
+| Mockgen infrastructure | Match Telkomsel boilerplate convention [ADR-0020] |
+
+---
+
+## 3. High Level Design (HLD)
 
 ### 2.1 Context (C4 Level 1)
 
@@ -224,7 +337,7 @@ sequenceDiagram
 
 ---
 
-## 3. Low Level Design (LLD)
+## 4. Low Level Design (LLD)
 
 ### 3.1 Layered Architecture per Service (Hexagonal / Ports & Adapters)
 
@@ -342,7 +455,7 @@ Lihat [`pkg/idempotency/`](pkg/idempotency/store.go).
 
 ---
 
-## 4. Entity Relationship Diagram (ERD)
+## 5. Entity Relationship Diagram (ERD)
 
 > Database per service (logical). Untuk demo kita pakai satu PostgreSQL instance dengan **schema** terpisah (`reservation`, `billing`, `payment`).
 
@@ -458,7 +571,7 @@ DDL lengkap ada di [`deploy/migrations/`](deploy/migrations/).
 
 ---
 
-## 5. Reusable Components
+## 6. Reusable Components
 
 | Package | Fungsi | Dipakai oleh |
 |---|---|---|
@@ -477,7 +590,7 @@ DDL lengkap ada di [`deploy/migrations/`](deploy/migrations/).
 
 ---
 
-## 6. Resilience, Consistency & Idempotency
+## 7. Resilience, Consistency & Idempotency
 
 ### 6.1 CAP — Pilihan Eksplisit
 
@@ -498,7 +611,7 @@ Reservation → Billing → Payment → Billing (confirm) → Notification — s
 
 ---
 
-## 7. Pricing Engine
+## 8. Pricing Engine
 
 Implementasi: [`pkg/pricing/engine.go`](pkg/pricing/engine.go).
 
@@ -516,7 +629,7 @@ Aturan (sesuai use case):
 
 ---
 
-## 8. Testing Strategy
+## 9. Testing Strategy
 
 > Detail: [`docs/architecture/testing-strategy.md`](docs/architecture/testing-strategy.md).
 
@@ -541,7 +654,7 @@ Pyramid:
 
 ---
 
-## 9. Quick Start (Demo)
+## 10. Quick Start (Demo)
 
 ```bash
 # 1. Boot stack lengkap (postgres, redis, nats, jaeger, prometheus, semua service)
@@ -569,7 +682,7 @@ make test-e2e
 
 ---
 
-## 10. Deployment Options
+## 11. Deployment Options
 
 | Target | File | Kapan dipakai |
 |---|---|---|
@@ -582,7 +695,7 @@ make test-e2e
 
 ---
 
-## 11. Observability
+## 12. Observability
 
 | Pilar | Tool | Keterangan |
 |---|---|---|
@@ -594,7 +707,7 @@ make test-e2e
 
 ---
 
-## 12. Security
+## 13. Security
 
 | Area | Implementasi | Doc |
 |---|---|---|
@@ -612,24 +725,41 @@ make test-e2e
 
 ---
 
-## 13. Architecture Decision Records
+## 14. Architecture Decision Records
 
-ADR didokumentasikan di [`docs/architecture/adr/`](docs/architecture/adr/):
+ADR didokumentasikan di [`docs/architecture/adr/`](docs/architecture/adr/). Total **23 ADRs** covering foundational, data, security, observability, ops, dan testing decisions.
 
 | # | Judul | Status |
 |---|---|---|
-| 0001 | Microservices vs Modular Monolith | Accepted |
-| 0002 | gRPC sebagai protokol antar service | Accepted |
-| 0003 | PostgreSQL sebagai primary datastore | Accepted |
-| 0004 | Three-layer locking (Redis + Row + Exclusion constraint) | Accepted |
-| 0005 | NATS JetStream sebagai event bus | Accepted |
+| 0001 | Microservices vs Modular Monolith | Accepted (partly superseded oleh 0009) |
+| 0002 | gRPC over HTTP/2 untuk Komunikasi Antar Service | Accepted |
+| 0003 | PostgreSQL sebagai Primary Datastore | Accepted |
+| 0004 | Three-Layer Locking (Redis + Row + Exclusion Constraint) | Accepted |
+| 0005 | NATS JetStream sebagai Event Bus | Accepted |
 | 0006 | Event Sourcing untuk Billing | Accepted |
-| 0007 | Idempotency Key — store-side | Accepted |
-| 0008 | grpc-gateway untuk REST exposure | Accepted |
+| 0007 | Server-Side Idempotency Key | Accepted |
+| 0008 | grpc-gateway untuk REST Exposure | Accepted |
+| 0009 | Defer Search & Presence Services (YAGNI) | Accepted |
+| 0010 | Protocol Strategy — REST in / gRPC out / NATS events | Accepted |
+| 0011 | Anti-Overlap Mechanism — Partial Unique Index | Accepted |
+| 0012 | Billing Policy + Auto-Pay (Mock Wallet) | Accepted |
+| 0013 | User Data Ownership — Embedded di Notification | Accepted |
+| 0014 | Hybrid Payment Mode + Overdue Worker + Driver Blocking | Accepted |
+| 0015 | Distributed Rate Limiting via Redis Token Bucket | Accepted |
+| 0016 | Security Posture — JWT, Security Headers, PII Masking | Accepted |
+| 0017 | Deployment Strategy: EKS over ECS Fargate | Accepted |
+| 0018 | Lint & Quality Gate Strategy (75% Coverage) | Accepted |
+| 0019 | CI Pipeline Architecture (Reusable Workflows) | Accepted |
+| 0020 | Test Doubles Strategy — Fakes-First with Mockgen Infrastructure | Accepted |
+| **0021** | **Distributed Transactions via Choreography Saga** | **Accepted** |
+| **0022** | **Observability Stack — Prometheus + Grafana + Loki + Tempo** | **Accepted** |
+| **0023** | **OpenTelemetry Sampling Strategy — Head-Based with Env Override** | **Accepted** |
+
+> Bold rows = added 2026-05-20 untuk address previous assessment feedback gaps (Saga pattern, observability stack rationale, sampling strategy).
 
 ---
 
-## 14. Roadmap & Trade-offs
+## 15. Roadmap & Trade-offs
 
 **In scope (selesai untuk assessment)**:
 - ✅ Reservation (full lifecycle, locking, idempotency)
@@ -655,6 +785,55 @@ ADR didokumentasikan di [`docs/architecture/adr/`](docs/architecture/adr/):
 - NATS JetStream pilih dibanding Kafka — lebih hemat resource untuk demo, sudah cukup untuk semantik *at-least-once*.
 - Database per service via **schema** (bukan instance) untuk hemat resource demo; production migrasi ke instance terpisah.
 - `events_log` di-share via NATS JetStream stream, tidak ada CDC tool — cukup untuk skala assessment.
+
+---
+
+## 16. Operational Documentation
+
+Beyond architectural design, ParkirPintar punya documentation lengkap untuk operational lifecycle:
+
+### Developer onboarding
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — branch strategy (trunk-based), commit conventions (Conventional Commits), PR workflow, quality gates
+- [example.env per service](services/) — onboarding template untuk env config
+- [Makefile](Makefile) — standardized targets (`mod-tidy`, `unit-test-coverage`, `gosec`, `gen-mocks`, dll)
+
+### API reference
+
+- [docs/api/CHANGELOG.md](docs/api/CHANGELOG.md) — API versioning + breaking change history
+- [docs/api/idempotency.md](docs/api/idempotency.md) — Idempotency-Key header contract
+- [proto/](proto/) — gRPC schema (source of truth)
+- Generated OpenAPI spec via `make proto` di `docs/api/openapi.json`
+
+### Operational runbooks (SEV 1-4)
+
+- [docs/runbooks/](docs/runbooks/) — 5 incident response runbooks:
+  - [high-error-rate.md](docs/runbooks/high-error-rate.md)
+  - [db-connection-saturated.md](docs/runbooks/db-connection-saturated.md)
+  - [nats-stream-lag.md](docs/runbooks/nats-stream-lag.md)
+  - [pod-crashloop.md](docs/runbooks/pod-crashloop.md)
+  - [secret-rotation.md](docs/runbooks/secret-rotation.md)
+
+### Architecture diagrams
+
+- [docs/architecture/diagrams/sequences.md](docs/architecture/diagrams/sequences.md) — 6 Mermaid sequence diagrams untuk critical flows
+- README sections 3-5 — HLD/LLD/ERD dengan Mermaid
+
+### Architecture Decision Records
+
+- [docs/architecture/adr/](docs/architecture/adr/) — 20+ ADRs untuk architectural decisions
+- ADR template: [docs/architecture/adr/0000-template.md](docs/architecture/adr/0000-template.md)
+
+### Performance benchmarks
+
+- [test/load/RESULTS.md](test/load/RESULTS.md) — k6 load test scenarios + SLOs + analysis
+- [test/load/](test/load/) — k6 scripts (availability, reservation, contention)
+
+### Security documentation
+
+- [docs/security/](docs/security/) — threat model, secret rotation log, security baseline
+- ADR-0016 — comprehensive security posture
+- Trivy + gosec + gitleaks + govulncheck integrated di CI
 
 ---
 

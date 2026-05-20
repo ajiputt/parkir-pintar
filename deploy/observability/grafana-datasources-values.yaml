@@ -1,0 +1,114 @@
+# Helm values override untuk kube-prometheus-stack — additional Grafana datasources.
+#
+# Apply via:
+#   helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+#     --namespace observability --reuse-values \
+#     -f deploy/observability/grafana-datasources-values.yaml
+#
+# Penting: `uid:` di-set explicit supaya cross-datasource linking (Trace → Logs,
+# Trace → Metrics) bisa reference UID yang predictable, bukan auto-generated.
+
+grafana:
+  # ---- SMTP config — Amazon SES sebagai email transport untuk alert notification.
+  # SMTP credentials di-store di K8s Secret `grafana-smtp-secret` (manual create).
+  # Lihat ADR-0016 untuk rationale + setup steps.
+  smtp:
+    enabled: true
+    host: "email-smtp.ap-southeast-3.amazonaws.com:587"
+    user: ""              # set via existingSecret
+    password: ""          # set via existingSecret
+    fromAddress: "noreply@parkirpintar.id"   # WAJIB verified di SES
+    fromName: "ParkirPintar Alerts"
+    skipVerify: false
+    existingSecret: "grafana-smtp-secret"
+    userKey: "smtp-user"
+    passwordKey: "smtp-password"
+
+  grafana.ini:
+    smtp:
+      enabled: true
+      host: "email-smtp.ap-southeast-3.amazonaws.com:587"
+      from_address: "noreply@parkirpintar.id"
+      from_name: "ParkirPintar Alerts"
+      skip_verify: false
+      startTLS_policy: "MandatoryStartTLS"   # SES port 587 require STARTTLS
+
+  # Default Prometheus datasource — yang sudah auto-provisioned by chart.
+  # Override UID supaya bisa di-reference dari Tempo jsonData.tracesToMetrics.
+  # Note: kalau gak override, UID-nya auto-generated random per install.
+  sidecar:
+    datasources:
+      defaultDatasourceEnabled: true
+
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki   # ← eksplisit, bukan random
+      url: http://loki:3100
+      access: proxy
+      isDefault: false
+
+    - name: Tempo
+      type: tempo
+      uid: tempo
+      url: http://tempo:3200
+      access: proxy
+      isDefault: false
+      jsonData:
+        # Trace to logs: klik span di Tempo → auto-buka Loki dengan filter trace_id.
+        tracesToLogsV2:
+          datasourceUid: loki   # Reference Loki UID above
+          spanStartTimeShift: "-2m"
+          spanEndTimeShift: "2m"
+          tags:
+            - key: service.name
+              value: app
+          filterByTraceID: true
+          filterBySpanID: false
+
+        # Trace to metrics: klik span → auto-buka Prometheus query relevant.
+        tracesToMetrics:
+          datasourceUid: prometheus   # Auto-provisioned by kube-prometheus-stack
+          spanStartTimeShift: "-2m"
+          spanEndTimeShift: "2m"
+          tags:
+            - key: service.name
+              value: service
+          queries:
+            - name: Request rate
+              query: 'sum(rate(grpc_requests_total{$$__tags}[5m]))'
+            - name: P95 latency
+              query: 'histogram_quantile(0.95, sum by (le) (rate(grpc_request_duration_seconds_bucket{$$__tags}[5m])))'
+
+        # Search default options
+        search:
+          hide: false
+
+        # Node graph view enabled di Tempo Explore
+        nodeGraph:
+          enabled: true
+
+        # Service map (require metrics_generator di Tempo config)
+        serviceMap:
+          datasourceUid: prometheus
+
+  # Override Prometheus default datasource UID supaya predictable
+  # (kalau chart default UID-nya beda).
+  # Note: ini berlaku ke datasource Prometheus yang auto-provisioned.
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          uid: prometheus   # ← explicit UID
+          type: prometheus
+          url: http://prometheus-kube-prometheus-prometheus:9090
+          access: proxy
+          isDefault: true
+          jsonData:
+            timeInterval: 30s
+            httpMethod: POST
+            # Exemplars — link metric points to traces (advanced).
+            exemplarTraceIdDestinations:
+              - name: trace_id
+                datasourceUid: tempo

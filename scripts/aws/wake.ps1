@@ -425,10 +425,31 @@ helm repo update 2>$null
 kubectl create namespace observability 2>$null
 
 # kube-prometheus-stack (Prometheus + Grafana + Alertmanager)
+#
+# Flag *NilUsesHelmValues=false x 4 — disable default scoping yang restrict
+# Prometheus operator ke namespace observability only. Tanpa ini, ServiceMonitor
+# di namespace parkir (atau lainnya) gak akan ke-discover.
+#   - serviceMonitorSelectorNilUsesHelmValues : disable label `release: prometheus` filter
+#   - serviceMonitorNamespaceSelectorNilUsesHelmValues : watch all namespaces (bukan cuma observability)
+#   - podMonitorSelector / podMonitorNamespaceSelector : sama, untuk PodMonitor CRD
+# Auto-register Loki + Tempo sebagai Grafana datasource via additionalDataSources.
+# Cluster DNS: <service-name>.<namespace>.svc.cluster.local — bisa di-shorten ke
+# just <service-name> kalau Grafana same namespace (observability).
 helm upgrade --install prometheus prometheus-community/kube-prometheus-stack `
     --namespace observability `
     --set grafana.adminPassword="parkirpintar-demo" `
+    --set "grafana.additionalDataSources[0].name=Loki" `
+    --set "grafana.additionalDataSources[0].type=loki" `
+    --set "grafana.additionalDataSources[0].url=http://loki:3100" `
+    --set "grafana.additionalDataSources[0].access=proxy" `
+    --set "grafana.additionalDataSources[1].name=Tempo" `
+    --set "grafana.additionalDataSources[1].type=tempo" `
+    --set "grafana.additionalDataSources[1].url=http://tempo:3200" `
+    --set "grafana.additionalDataSources[1].access=proxy" `
     --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false `
+    --set prometheus.prometheusSpec.serviceMonitorNamespaceSelectorNilUsesHelmValues=false `
+    --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false `
+    --set prometheus.prometheusSpec.podMonitorNamespaceSelectorNilUsesHelmValues=false `
     --set prometheus.prometheusSpec.storageSpec=null `
     --set alertmanager.enabled=false `
     --set prometheus.prometheusSpec.resources.requests.memory=400Mi `
@@ -437,30 +458,26 @@ helm upgrade --install prometheus prometheus-community/kube-prometheus-stack `
 
 Write-Ok "Prometheus + Grafana installed"
 
-# Loki (logs aggregation, in-memory mode untuk demo)
-helm upgrade --install loki grafana/loki `
+# Loki + Promtail via loki-stack chart (Loki 2.x bundled).
+# Note: loki-stack chart is deprecated but Loki 3.x current chart bermasalah
+# dengan Grafana datasource health check (parse error). Loki 2.x lebih stabil
+# untuk demo. Migrate ke Loki 3.x kalau Grafana plugin compatibility fixed.
+helm upgrade --install loki grafana/loki-stack `
     --namespace observability `
-    --set deploymentMode=SingleBinary `
-    --set "loki.commonConfig.replication_factor=1" `
-    --set "loki.storage.type=filesystem" `
-    --set "singleBinary.replicas=1" `
-    --set "singleBinary.persistence.enabled=false" `
-    --set "loki.schemaConfig.configs[0].from=2024-01-01" `
-    --set "loki.schemaConfig.configs[0].store=tsdb" `
-    --set "loki.schemaConfig.configs[0].object_store=filesystem" `
-    --set "loki.schemaConfig.configs[0].schema=v13" `
-    --set "loki.schemaConfig.configs[0].index.prefix=loki_index_" `
-    --set "loki.schemaConfig.configs[0].index.period=24h" `
-    --set "loki.auth_enabled=false" `
-    --wait --timeout 5m 2>$null
+    --set "loki.persistence.enabled=false" `
+    --set "loki.config.auth_enabled=false" `
+    --set "loki.service.type=ClusterIP" `
+    --set "grafana.enabled=false" `
+    --set "prometheus.enabled=false" `
+    --set "promtail.enabled=true" `
+    --wait --timeout 5m
 
-# Promtail (log shipper DaemonSet, forward pod logs ke Loki)
-helm upgrade --install promtail grafana/promtail `
-    --namespace observability `
-    --set "config.clients[0].url=http://loki:3100/loki/api/v1/push" `
-    --wait 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNING: Loki install gagal (exit $LASTEXITCODE) — log akan kosong di Grafana" -ForegroundColor Yellow
+}
 
-Write-Ok "Loki + Promtail installed"
+# Promtail bundled di loki-stack — no separate install needed.
+Write-Ok "Loki + Promtail (bundled) installed"
 
 # Tempo (traces backend, terima OTLP gRPC dari pkg/tracing services)
 helm upgrade --install tempo grafana/tempo `
