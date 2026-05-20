@@ -25,7 +25,6 @@ func TestOtelSpanName_FormatsMethodAndPath(t *testing.T) {
 		{"OPTIONS preflight", http.MethodOptions, "/v1/reservations", "OPTIONS /v1/reservations"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r := &http.Request{Method: tc.method, URL: &url.URL{Path: tc.path}}

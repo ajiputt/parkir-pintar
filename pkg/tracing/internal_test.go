@@ -60,7 +60,6 @@ func TestResolveSamplerRatio_EnvOverrideValid(t *testing.T) {
 		{"override-precise", "0.05", 0.05, Config{Env: "prod"}},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := resolveSamplerRatio(tc.input, stubEnv(map[string]string{
@@ -86,7 +85,6 @@ func TestResolveSamplerRatio_EnvOverrideInvalid(t *testing.T) {
 		{"way-too-high", "100"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			// Prod default 0.1; invalid override harus tidak mengubah.
@@ -114,7 +112,6 @@ func TestResolveSamplerRatio_BoundaryValues(t *testing.T) {
 		{"1.0", 1},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.envVal, func(t *testing.T) {
 			t.Parallel()
 			got := resolveSamplerRatio(
