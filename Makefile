@@ -53,6 +53,16 @@ tidy: ## Run go mod tidy di semua module workspace
 		(cd $$m && $(GO) mod tidy); \
 	done
 
+.PHONY: mod-tidy
+mod-tidy: tidy ## Alias 'tidy' — sesuai convention boilerplate
+
+.PHONY: mod-reset
+mod-reset: ## Reset go.sum + clean module cache + tidy (untuk recovery dari corrupt state)
+	@for m in pkg proto services/gateway services/reservation services/billing services/payment services/notification; do \
+		echo "==> reset $$m"; \
+		(cd $$m && rm -f go.sum && $(GO) clean --modcache && $(GO) mod tidy) || true; \
+	done
+
 .PHONY: regen
 regen: proto tidy ## Regenerate proto + sync go.mod (alias buat workflow setelah edit .proto)
 
@@ -103,6 +113,30 @@ test-load: ## Load test dengan k6 (butuh k6 installed)
 .PHONY: cover
 cover: test-unit ## Tampilkan coverage HTML
 	$(GO) tool cover -html=pkg/coverage.out
+
+.PHONY: unit-test-coverage
+unit-test-coverage: ## Unit test dengan coverage report (boilerplate convention)
+	@echo "==> Running unit tests with coverage..."
+	@for m in pkg services/reservation services/billing services/payment services/notification services/gateway; do \
+		echo "==> coverage $$m"; \
+		(cd $$m && $(GO) test -v -covermode=count ./... -coverprofile=coverage.cov 2>&1 | tail -50); \
+	done
+	@echo "==> Coverage per-package summary:"
+	@for m in pkg services/reservation services/billing services/payment services/notification services/gateway; do \
+		echo ""; echo "===== $$m ====="; \
+		(cd $$m && $(GO) tool cover -func=coverage.cov 2>/dev/null | tail -1); \
+	done
+
+.PHONY: check-cognitive-complexity
+check-cognitive-complexity: ## Cek cognitive complexity (gocognit, threshold 15) — boilerplate convention
+	@command -v gocognit >/dev/null 2>&1 || { echo "Install: go install github.com/uudashr/gocognit/cmd/gocognit@latest"; exit 1; }
+	@find . -type f -name '*.go' \
+		-not -name "*_test.go" \
+		-not -name "*_mock.go" \
+		-not -path "./_mock/*" \
+		-not -path "*/gen/*" \
+		-not -path "./proto/gen/*" \
+		-exec gocognit -over 15 {} \;
 
 # ----- Database ---------------------------------------------------------------
 
@@ -158,6 +192,16 @@ sec-scan: ## gosec + govulncheck + trivy
 		trivy image --severity HIGH,CRITICAL parkir-pintar/$$svc:latest || true; \
 	done
 
+.PHONY: gosec
+gosec: ## Run gosec dengan output sonarqube format (boilerplate convention)
+	@command -v gosec >/dev/null 2>&1 || { echo "Install: go install github.com/securego/gosec/v2/cmd/gosec@latest"; exit 1; }
+	gosec -exclude=G401,G304,G501,G505 -fmt=sonarqube -out=sonar-gosec.json ./... || true
+	@echo "==> Output: sonar-gosec.json"
+
+.PHONY: golint
+golint: ## Alias 'lint' — sesuai convention boilerplate
+	golangci-lint run --timeout 5m ./...
+
 # ----- AWS Operations --------------------------------------------------------
 
 AWS_ENV ?= demo
@@ -191,8 +235,29 @@ aws-cost: ## Tampilkan biaya AWS bulan ini
 	  --filter '{"Tags":{"Key":"Project","Values":["parkir-pintar"]}}' \
 	  --query 'ResultsByTime[0].Total.UnblendedCost' --output table
 
+# ----- Mocks ------------------------------------------------------------------
+
+.PHONY: gen-mock-source
+gen-mock-source: ## Generate single mock dari source file (boilerplate convention)
+                 ## Usage: make gen-mock-source pkg=<pkg> destination=<dest> source=<src>
+	@command -v mockgen >/dev/null 2>&1 || { echo "Install: go install go.uber.org/mock/mockgen@latest"; exit 1; }
+	@if [ -z "$(pkg)" ] || [ -z "$(destination)" ] || [ -z "$(source)" ]; then \
+		echo "Usage: make gen-mock-source pkg=mock_repository source=path/to/file.go destination=_mock/path/mock.go"; \
+		exit 1; \
+	fi
+	mockgen -package=$(pkg) -destination=$(destination) -source=$(source)
+	@echo "==> Generated: $(destination)"
+
+.PHONY: gen-mocks
+gen-mocks: ## Generate semua mocks via go:generate directives (Phase C — full project)
+	@command -v mockgen >/dev/null 2>&1 || { echo "Install: go install go.uber.org/mock/mockgen@latest"; exit 1; }
+	@for m in pkg services/gateway services/reservation services/billing services/payment services/notification; do \
+		echo "==> generate mocks for $$m"; \
+		(cd $$m && $(GO) generate ./...); \
+	done
+
 # ----- Clean ------------------------------------------------------------------
 
 .PHONY: clean
 clean: ## Hapus build artifacts
-	rm -rf bin/ coverage.out **/coverage.out
+	rm -rf bin/ coverage.out coverage.cov sonar-gosec.json **/coverage.out **/coverage.cov

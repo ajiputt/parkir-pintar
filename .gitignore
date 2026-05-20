@@ -17,6 +17,7 @@ dist/
 # ----- Coverage --------------------------------------------------------------
 # Generated `go test -coverprofile`. Re-generate via `make cover`.
 coverage.out
+coverage.cov
 *.cover
 profile.cov
 coverage-reports/
@@ -29,6 +30,7 @@ coverage-reports/
 .sonar_lock
 report-task.txt
 gosec-report.json
+sonar-gosec.json
 # Personal local helper script (per-developer, beda token + project key).
 scripts/sonar-local.ps1
 
@@ -152,3 +154,4 @@ testdata/tmp/
 /scripts/simulate-midtrans-webhook.sh
 /scripts/demo.sh
 /scripts/e2e.sh
+/.scannerwork/
