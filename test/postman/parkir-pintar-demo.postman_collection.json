@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "f7c1a2e0-7a01-4f1e-9a8b-parkir-pintar-demo",
     "name": "ParkirPintar — Demo Scenarios",
-    "description": "End-to-end demo collection untuk Smart Parking Marketplace.\n\nTiap folder = 1 skenario demo dan bisa dijalankan urut via Collection Runner. Test scripts otomatis chain variable (reservation_id, invoice_id, payment_id, jwt_token) ke environment.\n\n**Prasyarat:**\n- Semua service running (gateway :8080, reservation :9091, billing :9092, payment :9093, notification, postgres, redis, nats)\n- Import `local.postman_environment.json`\n- Run \"00 — Auth › Get Dev Token\" sekali untuk dapat JWT (kalau AUTH_PASSTHROUGH_NO_TOKEN=false)\n\n**Variable conventions:**\n- `{{baseUrl}}` = http://localhost:8080\n- `{{driver_id}}` = uuid dummy (default di env)\n- `{{jwt_token}}` = di-set otomatis oleh dev-token request\n- `{{reservation_id}}`, `{{invoice_id}}`, `{{payment_id}}` = di-set by test scripts\n- `{{idempotency_key}}` = di-generate by pre-request script saat dibutuhkan\n",
+    "description": "End-to-end demo collection untuk Smart Parking Marketplace.\n\nTiap folder = 1 skenario demo dan bisa dijalankan urut via Collection Runner. Test scripts otomatis chain variable (reservation_id, invoice_id, payment_id, jwt_token) ke environment.\n\n**Prasyarat:**\n- Semua service running (gateway :8080, reservation :9091, billing :9092, payment :9093, notification, postgres, redis, nats)\n- Import environment: `local.postman_environment.json` (lokal) atau `aws.postman_environment.json` (EKS)\n- Set `dev_token_secret` di environment (lihat di bawah)\n- Run \"00 — Auth › Get Dev Token\" sekali untuk dapat JWT — semua request lain auto pakai Bearer token dari hasil ini\n\n**Dev-token secret setup (one-time):**\n- Lokal: bebas, anything (env var DEV_TOKEN_SECRET di docker-compose)\n- EKS: get value dari AWS Secrets Manager:\n  ```powershell\n  aws secretsmanager get-secret-value --secret-id ajipur-parkir-pintar/dev-token-secret --region ap-southeast-3 --query SecretString --output text\n  ```\n  Then paste ke Postman environment variable `dev_token_secret`.\n\nWithout valid X-Dev-Secret header, /v1/auth/dev-token return 404 (security: cegah anonymous JWT mint).\n\n**Variable conventions:**\n- `{{baseUrl}}` = http://localhost:8080 (lokal) atau http://<alb-dns> (EKS)\n- `{{dev_token_secret}}` = shared secret untuk dev-token endpoint\n- `{{driver_id}}` = uuid dummy (default di env)\n- `{{jwt_token}}` = di-set otomatis oleh dev-token request\n- `{{reservation_id}}`, `{{invoice_id}}`, `{{payment_id}}` = di-set by test scripts\n- `{{idempotency_key}}` = di-generate by pre-request script saat dibutuhkan\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -48,7 +48,14 @@
           "request": {
             "auth": { "type": "noauth" },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              {
+                "key": "X-Dev-Secret",
+                "value": "{{dev_token_secret}}",
+                "description": "Shared secret yang gate endpoint /v1/auth/dev-token. Required di staging/EKS. Set value di environment variable dev_token_secret. Tanpa header valid, endpoint return 404 (security: cegah anonymous JWT mint)."
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"ttl_sec\": 3600\n}",

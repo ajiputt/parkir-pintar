@@ -33,6 +33,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -234,13 +235,22 @@ func run() error {
 		),
 	)
 
+	// OpenTelemetry HTTP auto-instrumentation — outermost wrap so every incoming
+	// request creates a server span (parent of any downstream gRPC spans).
+	// Span name uses METHOD + path for clarity in Tempo/Grafana.
+	otelHandler := otelhttp.NewHandler(handler, "gateway",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	)
+
 	addr := getenv("GATEWAY_HTTP_PORT", ":8080")
 	if !strings.HasPrefix(addr, ":") {
 		addr = ":" + addr
 	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           otelHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -496,37 +506,4 @@ const swaggerHTML = `<!DOCTYPE html><html><head>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head>
 <body><div id="ui"></div>
 <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>SwaggerUIBundle({url:'/openapi.json',dom_id:'#ui'});</script></body></html>`
-
-func swaggerUI(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(swaggerHTML))
-}
-
-// openapiHandler — serve generated OpenAPI spec. `make proto` menulis ke
-// docs/api/openapi.json. Kalau file belum ada, return minimal placeholder.
-func openapiHandler(w http.ResponseWriter, _ *http.Request) {
-	specPath := getenv("OPENAPI_SPEC_PATH", "docs/api/openapi.json")
-	if data, err := os.ReadFile(specPath); err == nil {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(data)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"openapi": "3.0.0",
-		"info": map[string]any{
-			"title":       "ParkirPintar API",
-			"version":     "1.0.0",
-			"description": "Smart Parking Marketplace — generated dari .proto setelah `make proto`",
-		},
-		"paths": map[string]any{
-			"/v1/availability":      map[string]any{"get": map[string]any{"summary": "Get availability"}},
-			"/v1/reservations":      map[string]any{"post": map[string]any{"summary": "Create reservation"}},
-			"/v1/reservations/{id}": map[string]any{"get": map[string]any{"summary": "Get reservation"}},
-			"/v1/payments":          map[string]any{"post": map[string]any{"summary": "Create payment"}},
-			"/v1/payments/{id}":     map[string]any{"get": map[string]any{"summary": "Get payment"}},
-			"/v1/invoices/{id}":     map[string]any{"get": map[string]any{"summary": "Get invoice"}},
-		},
-	})
-}
+<script>SwaggerUIBundle({url:'/openapi.json',dom_i

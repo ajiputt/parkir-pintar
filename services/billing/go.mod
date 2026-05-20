@@ -7,6 +7,7 @@ require (
 	github.com/ajiperdana/parkir-pintar/proto v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.65.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11

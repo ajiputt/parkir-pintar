@@ -192,8 +192,12 @@ services:
       JWT_SECRET: dev-only-secret-change-in-production-please-32chars
       JWT_ISSUER: parkirpintar
       JWT_TTL: 1h
-      # Demo: passthrough kalau token kosong (untuk Postman testing tanpa setup).
+      # Local dev: passthrough kalau token kosong (Postman testing tanpa setup).
+      # EKS/production: di-set "false" via Helm values supaya token wajib.
       AUTH_PASSTHROUGH_NO_TOKEN: "true"
+      # Dev-token secret untuk gate /v1/auth/dev-token endpoint.
+      # Value sama dengan Postman environment `dev_token_secret`.
+      DEV_TOKEN_SECRET: local-dev-secret-change-me
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       reservation: { condition: service_started }

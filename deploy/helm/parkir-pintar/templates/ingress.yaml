@@ -5,9 +5,16 @@ metadata:
   name: parkir-gateway
   annotations:
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
-    # Fixed-response action: kembalikan 404 untuk /metrics.
-    # Cegah operational metric leak ke public; Prometheus scrape tetap via
-    # internal ClusterIP di namespace observability.
+    # Fixed-response action: kembalikan 404 untuk path internal-only.
+    #
+    # Blocked dari public:
+    #   - /metrics       : operational metric leak (Prometheus scrape internal only)
+    #   - /docs          : Swagger UI — reveal API surface ke recon attacker
+    #   - /openapi.json  : same — full schema
+    #
+    # Akses /docs dan Swagger di staging/EKS:
+    #   kubectl port-forward -n parkir svc/gateway 8080:80
+    #   → buka http://localhost:8080/docs
     #
     # /healthz dan /readyz SENGAJA tetap public-accessible:
     #   - ALB target group health check butuh reachable
@@ -32,8 +39,7 @@ spec:
       {{- end }}
       http:
         paths:
-          # Priority order: more specific path first. Exact match /metrics
-          # supaya gak masuk ke gateway business handler.
+          # Priority order: more specific path first.
           - path: /metrics
             pathType: Exact
             backend:
@@ -41,7 +47,22 @@ spec:
                 name: deny-internal
                 port:
                   name: use-annotation
-          # Catch-all untuk business endpoint + /healthz + /readyz + /docs.
+          # /docs Prefix — catch /docs, /docs/, /docs/anything (asset Swagger UI).
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: deny-internal
+                port:
+                  name: use-annotation
+          - path: /openapi.json
+            pathType: Exact
+            backend:
+              service:
+                name: deny-internal
+                port:
+                  name: use-annotation
+          # Catch-all untuk business endpoint + /healthz + /readyz.
           - path: /
             pathType: Prefix
             backend:

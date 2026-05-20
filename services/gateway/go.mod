@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7
 	github.com/redis/go-redis/v9 v9.7.3
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11

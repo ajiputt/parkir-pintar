@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -158,6 +159,11 @@ func run() error {
 	// ----- gRPC server
 	grpcAddr := getenv("RESERVATION_GRPC_ADDR", ":9091")
 	grpcServer := grpc.NewServer(
+		// OpenTelemetry gRPC auto-instrumentation via StatsHandler API
+		// (otelgrpc v0.49+ pattern — replaces deprecated UnaryServerInterceptor).
+		// Creates a server span per RPC + extracts trace context from incoming
+		// metadata for cross-service propagation.
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			grpcutil.RecoveryUnary(log),
 			grpcutil.RequestIDUnary(),

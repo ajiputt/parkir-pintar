@@ -5,6 +5,8 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -53,10 +55,17 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 
 	ratio := cfg.SamplerRatio
 	if ratio <= 0 {
-		ratio = 0.1 // default 10% di prod, override via env
+		ratio = 0.1 // default 10% di prod
 	}
 	if cfg.Env == "dev" {
 		ratio = 1.0
+	}
+	// Env var override — supaya bisa boost sampling rate tanpa rebuild.
+	// e.g., OTEL_TRACES_SAMPLER_RATIO=1.0 → trace semuanya (untuk demo).
+	if v := os.Getenv("OTEL_TRACES_SAMPLER_RATIO"); v != "" {
+		if r, err := strconv.ParseFloat(v, 64); err == nil && r >= 0 && r <= 1 {
+			ratio = r
+		}
 	}
 
 	tp := sdktrace.NewTracerProvider(
