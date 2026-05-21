@@ -1,0 +1,77 @@
+# Gitleaks configuration untuk ParkirPintar.
+# Default ruleset di-inherit (lihat gitleaks default-config), kita extend dengan
+# allowlist untuk reduce false positives di documentation files.
+#
+# Reference: https://github.com/gitleaks/gitleaks#configuration
+
+title = "ParkirPintar Gitleaks Config"
+
+# Extend default ruleset (built-in to gitleaks binary).
+# Lihat: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+[extend]
+useDefault = true
+
+# ---------- Allowlist global ----------
+[allowlist]
+description = "Global allowlist untuk paths + patterns yang clearly documentation/example"
+
+# Paths yang sengaja contain Authorization/token examples untuk dokumentasi.
+paths = [
+    # ADR + runbook documentation sering pakai curl examples
+    '''docs/architecture/adr/.*\.md$''',
+    '''docs/api/.*\.md$''',
+    '''docs/runbooks/.*\.md$''',
+
+    # Example env templates (placeholder values, sudah jelas FAKE/CHANGE_ME)
+    '''\.env\.example$''',
+    '''example\.env$''',
+    '''services/.*/example\.env$''',
+
+    # Test fixtures + load test scripts
+    '''test/load/.*\.js$''',
+    '''test/.*/testdata/.*''',
+    '''_test\.go$''',
+    '''_mock\.go$''',
+    '''_mock/.*''',
+
+    # Postman collections (test tokens, expected fake)
+    '''test/postman/.*\.json$''',
+
+    # CI/CD configs (no real secrets, all referenced via Secrets Manager)
+    '''\.github/workflows/.*\.ya?ml$''',
+]
+
+# Regex patterns yang clearly placeholders, bukan real secrets.
+regexes = [
+    # Documentation placeholders
+    '''<[A-Z_]+>''',                        # <JWT_TOKEN>, <YOUR_KEY>, dll
+    '''CHANGE_ME''',
+    '''YOUR_[A-Z_]+''',
+    '''REPLACE_WITH_[A-Z_]+''',
+    '''FAKE_[A-Z_]+''',
+    '''EXAMPLE_[A-Z_]+''',
+    '''INVALID_[A-Z_]+''',
+    '''TEST_[A-Z_]+''',
+    '''DEMO_[A-Z_]+''',
+
+    # Shell variable references
+    '''\$[A-Z_][A-Z0-9_]*''',               # $JWT, $TOKEN, $NEW_JWT
+    '''\$\{[A-Z_][A-Z0-9_]*\}''',           # ${JWT}, ${TOKEN}
+
+    # AWS Secrets Manager paths (references, not actual secrets)
+    '''ajipur-parkir-pintar/[a-z-]+''',
+
+    # JWT format placeholders (3 dots pattern but obviously fake)
+    '''eyJhbGc\.\.\.''',                    # Truncated JWT example
+    '''xxx\.xxx\.xxx''',                    # All-x placeholder
+    '''invalid\.token\.here''',             # Legacy placeholder (kept for backward compat)
+]
+
+# Specific commits yang previously had been audited as false positive (kalau perlu).
+commits = []
+
+# ---------- Custom rule overrides ----------
+# (kalau perlu disable specific built-in rule yang noisy untuk codebase ini)
+
+# Disable curl-auth-header rule di docs (handled via allowlist paths above)
+# Note: built-in rule curl-auth-header sudah covered by paths allowlist

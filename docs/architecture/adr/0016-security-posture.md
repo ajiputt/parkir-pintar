@@ -180,7 +180,7 @@ curl -X POST http://localhost:8080/v1/reservations \
 ### Test 3: invalid token rejected (set AUTH_PASSTHROUGH_NO_TOKEN=false)
 ```bash
 curl -X POST http://localhost:8080/v1/reservations \
-  -H "Authorization: Bearer invalid.token.here" \
+  -H "Authorization: Bearer INVALID_TOKEN_FOR_TESTING" \
   -d '...'
 # Expected: 401 { "error": "unauthorized", "message": "invalid or expired token" }
 # Header: WWW-Authenticate: Bearer realm="parkirpintar"

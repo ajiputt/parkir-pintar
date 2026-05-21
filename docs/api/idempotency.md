@@ -30,7 +30,7 @@ GET requests (read-only) tidak memerlukan key — sudah idempotent by nature.
 ```http
 POST /v1/reservations HTTP/1.1
 Host: api.parkirpintar.id
-Authorization: Bearer eyJhbGc...
+Authorization: Bearer <JWT_TOKEN>
 Content-Type: application/json
 Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 
