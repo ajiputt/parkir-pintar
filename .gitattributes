@@ -1,0 +1,57 @@
+# Force LF line endings untuk Linux-targeted files.
+# Windows Git default `core.autocrlf=true` convert LF→CRLF saat checkout,
+# yang break shell scripts saat di-run di Linux container ("\r" jadi part of
+# command → 'command not found' error).
+#
+# Pattern: explicit `eol=lf` overrides core.autocrlf untuk file ini.
+
+# ----- Shell scripts -----
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# ----- Dockerfile + config -----
+Dockerfile        text eol=lf
+Dockerfile.*      text eol=lf
+*.dockerfile      text eol=lf
+docker-compose*.yml text eol=lf
+
+# ----- Linux config files -----
+*.conf      text eol=lf
+*.cnf       text eol=lf
+*.ini       text eol=lf
+
+# ----- Go source (cross-platform, default LF) -----
+*.go        text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+
+# ----- YAML (Kubernetes, GitHub Actions, etc.) -----
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# ----- SQL migrations -----
+*.sql       text eol=lf
+
+# ----- Protobuf -----
+*.proto     text eol=lf
+
+# ----- Markdown documentation -----
+*.md        text eol=lf
+
+# ----- PowerShell — Windows only, keep CRLF -----
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
+*.psd1      text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# ----- Binary files (no conversion) -----
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.tar       binary
+*.gz        binary

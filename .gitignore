@@ -151,7 +151,7 @@ testdata/tmp/
 /services/gateway/__debug_bin.exe2508384549
 /deploy/terraform/aws-ecs/COST.md
 /scripts/dev/
-/scripts/simulate-midtrans-webhook.sh
-/scripts/demo.sh
-/scripts/e2e.sh
 /.scannerwork/
+# Note: scripts/e2e.sh, scripts/demo.sh, scripts/simulate-midtrans-webhook.sh
+# DIANGKAT dari gitignore — mereka adalah operational scripts yang harus
+# di-commit (assessor butuh untuk make test-e2e, make demo, dll.)

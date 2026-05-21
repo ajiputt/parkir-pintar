@@ -33,7 +33,8 @@ Pastikan sudah ter-install di local kamu:
 | **Docker Compose** | v2.x (plugin) | `docker compose version` | Included with Docker Desktop |
 | **make** | Any | `make --version` | macOS: built-in. Linux: `apt install make`. Windows: WSL2 atau Git Bash. |
 | **curl** | Any | `curl --version` | Pre-installed di hampir semua OS |
-| **jq** (optional) | 1.6+ | `jq --version` | For pretty-printing JSON di demo. macOS: `brew install jq`. Linux: `apt install jq`. |
+| **bash** | 4.0+ | `bash --version` | Windows: included with Git for Windows. macOS/Linux: pre-installed |
+| **jq** | 1.6+ | `jq --version` | For demo.sh JSON parsing. Windows: `winget install jqlang.jq` atau `choco install jq`. macOS: `brew install jq`. Linux: `apt install jq` |
 
 **Optional** (untuk yang mau eksplor lebih):
 
@@ -45,6 +46,18 @@ Pastikan sudah ter-install di local kamu:
 - RAM: minimum 4 GB free (8 GB recommended)
 - Disk: ~3 GB untuk Docker images + data
 - Ports yang harus available: `8080`, `5432`, `6379`, `4222`, `3000`, `16686`, `9090`, `8222`
+
+### ⚠️ Windows users — gunakan Git Bash untuk run `make` commands
+
+PowerShell + cmd.exe **tidak bisa execute `.sh` scripts** (shebang `#!/usr/bin/env bash` ga di-parse). Solusi:
+
+| Option | Setup | Recommendation |
+|---|---|---|
+| **Git Bash** (Recommended) | Auto-included dengan [Git for Windows](https://git-scm.com/download/win) | Open Git Bash → `cd ke project folder` → `make demo-up` |
+| WSL2 (Ubuntu) | `wsl --install` (admin PowerShell, reboot) | Heavier setup, but full Linux experience |
+| Pure PowerShell | Manually add `C:\Program Files\Git\bin` ke PATH | Works tapi error message ga clean |
+
+**For ParkirPintar specifically**: open Git Bash (Start menu → "Git Bash"), `cd` ke project folder, lalu jalankan `make` commands.
 
 ---
 
@@ -91,8 +104,12 @@ Yang akan di-boot:
 | `prometheus` | 9090 | Metrics |
 | `grafana` | 3000 | Dashboards |
 
-First run akan **download images** (~2 GB) + **build service images** (~3-5 menit).
+First run akan **download images** (~2 GB) + **build service images** (~5-8 menit).
 Subsequent run akan cached, jauh lebih cepat (~30 detik).
+
+> **💡 Note**: First build agak lama karena Dockerfile auto-generate proto stubs
+> di dalam container (no need install `buf` + `protoc-gen-go` locally). Cached
+> layers di subsequent build.
 
 ### Wait for healthy
 

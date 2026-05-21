@@ -104,7 +104,7 @@ test-integration: ## Integration test (testcontainers — butuh Docker)
 
 .PHONY: test-e2e
 test-e2e: ## E2E test terhadap stack docker-compose
-	./scripts/e2e.sh
+	bash scripts/e2e.sh
 
 .PHONY: test-load
 test-load: ## Load test dengan k6 (butuh k6 installed)
@@ -162,7 +162,7 @@ helm-sync-migrations: ## Sync deploy/migrations/ ke chart dir (untuk local helm 
 
 .PHONY: seed
 seed: ## Seed parking area + 5 floor + 750 spot
-	./scripts/seed.sh
+	bash scripts/seed.sh
 
 # ----- Demo / Compose ---------------------------------------------------------
 
@@ -180,7 +180,7 @@ demo-logs: ## Tail logs semua service
 
 .PHONY: demo-wait
 demo-wait: ## Tunggu sampai stack healthy
-	./scripts/wait-healthy.sh
+	bash scripts/wait-healthy.sh
 
 # ----- Security ---------------------------------------------------------------
 

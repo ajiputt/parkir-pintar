@@ -532,14 +532,27 @@ func swaggerUI(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(swaggerHTML))
 }
 
-// openapiHandler — serve generated OpenAPI spec. `make proto` menulis ke
-// docs/api/openapi.json. Kalau file belum ada, return minimal placeholder.
+// openapiHandler — serve generated OpenAPI spec. `make proto` (via buf with
+// openapiv2 plugin) menulis ke docs/api/openapi.swagger.json. Container build
+// set OPENAPI_SPEC_PATH=/docs/api/openapi.swagger.json. Fallback ke local dev
+// path. Kalau file masih ga ada (mis. proto stubs belum di-generate), return
+// minimal placeholder biar /docs page tetap render.
 func openapiHandler(w http.ResponseWriter, _ *http.Request) {
-	specPath := getenv("OPENAPI_SPEC_PATH", "docs/api/openapi.json")
-	if data, err := os.ReadFile(specPath); err == nil {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(data)
-		return
+	// Try multiple paths: env override → buf-generated swagger.json → legacy .json
+	candidates := []string{
+		getenv("OPENAPI_SPEC_PATH", ""),
+		"docs/api/openapi.swagger.json", // buf-generated (preferred)
+		"docs/api/openapi.json",         // legacy / manual export
+	}
+	for _, specPath := range candidates {
+		if specPath == "" {
+			continue
+		}
+		if data, err := os.ReadFile(specPath); err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(data)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
