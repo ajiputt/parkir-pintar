@@ -2,6 +2,8 @@
 
 > Production-grade microservices backend untuk sistem reservasi parkir cerdas, dibangun dengan **Go**, **gRPC/HTTP-2**, **PostgreSQL**, **Redis**, **NATS JetStream**, dan **OpenTelemetry**. Deploy fleksibel ke Docker Compose, Kubernetes/OpenShift, atau AWS (ECS Fargate).
 
+> **🚀 Reviewer / assessor baru di project ini?** Mulai dari **[GETTING_STARTED.md](GETTING_STARTED.md)** — step-by-step guide untuk run aplikasi di local dalam 5-10 menit (prerequisites, setup, verify, troubleshoot).
+
 | | |
 |---|---|
 | **Author** | Aji Perdana Putra (`ajiperdanaputra90@gmail.com`) |
@@ -656,6 +658,10 @@ Pyramid:
 
 ## 10. Quick Start (Demo)
 
+> **📘 Untuk panduan lengkap step-by-step**, lihat [GETTING_STARTED.md](GETTING_STARTED.md) — termasuk prerequisites, troubleshooting, dan demo flow detail.
+
+**TL;DR — 4 commands to running stack**:
+
 ```bash
 # 1. Boot stack lengkap (postgres, redis, nats, jaeger, prometheus, semua service)
 make demo-up
@@ -668,17 +674,35 @@ make seed
 
 # 4. Jalankan e2e test (semua skenario use case)
 make test-e2e
-
-# 5. Buka:
-#    - Swagger UI:    http://localhost:8080/docs
-#    - Jaeger:        http://localhost:16686
-#    - Grafana:       http://localhost:3000 (admin/admin)
-#    - Prometheus:    http://localhost:9090
-#    - NATS Monitor:  http://localhost:8222
-
-# 6. Demo flow lewat curl
-./scripts/demo.sh
 ```
+
+**Akses UI** setelah stack ready:
+
+| Service | URL | Credentials |
+|---|---|---|
+| Swagger UI (API explorer) | http://localhost:8080/docs | — |
+| Jaeger (distributed tracing) | http://localhost:16686 | — |
+| Grafana (dashboards) | http://localhost:3000 | admin / admin |
+| Prometheus (metrics) | http://localhost:9090 | — |
+| NATS Monitoring | http://localhost:8222 | — |
+
+**Try happy flow** via curl atau Postman:
+
+```bash
+# Quick demo script (curl-based)
+./scripts/demo.sh
+
+# Or import Postman collection:
+# test/postman/parkir-pintar-demo.postman_collection.json
+```
+
+**Stop + cleanup**:
+
+```bash
+make demo-down       # stop + remove volumes (fresh restart next time)
+```
+
+Detail prerequisites + troubleshooting di [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ---
 
@@ -794,16 +818,19 @@ Beyond architectural design, ParkirPintar punya documentation lengkap untuk oper
 
 ### Developer onboarding
 
+- **[GETTING_STARTED.md](GETTING_STARTED.md) — step-by-step local setup** (prerequisites, run, verify, troubleshoot)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — branch strategy (trunk-based), commit conventions (Conventional Commits), PR workflow, quality gates
 - [example.env per service](services/) — onboarding template untuk env config
 - [Makefile](Makefile) — standardized targets (`mod-tidy`, `unit-test-coverage`, `gosec`, `gen-mocks`, dll)
 
 ### API reference
 
+- **[docs/api/reference.md](docs/api/reference.md) — full endpoint specification** (path, headers, body, response, errors, examples per endpoint)
 - [docs/api/CHANGELOG.md](docs/api/CHANGELOG.md) — API versioning + breaking change history
 - [docs/api/idempotency.md](docs/api/idempotency.md) — Idempotency-Key header contract
+- [docs/api/openapi.swagger.json](docs/api/openapi.swagger.json) — Auto-generated OpenAPI 2.0 spec
 - [proto/](proto/) — gRPC schema (source of truth)
-- Generated OpenAPI spec via `make proto` di `docs/api/openapi.json`
+- Live Swagger UI: `http://localhost:8080/docs` (saat stack running)
 
 ### Operational runbooks (SEV 1-4)
 

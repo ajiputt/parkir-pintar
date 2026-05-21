@@ -1,5 +1,8 @@
 # API Changelog
 
+> **Looking for endpoint specs?** See [reference.md](reference.md) untuk full
+> documentation (path, headers, body, response, examples per endpoint).
+
 All notable API changes ke ParkirPintar HTTP/gRPC endpoints di-track di sini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) dan
 project menganut [Semantic Versioning](https://semver.org/).
