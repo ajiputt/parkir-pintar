@@ -1,8 +1,10 @@
-// Transaction helper untuk wrap multi-step DB operations dalam single atomic tx.
-//
-// Equivalent ke Spring's @Transactional annotation. Lihat ADR-0024 untuk
-// rationale + pattern guidance.
 package db
+
+// Transaction helper di file ini wrap multi-step DB operations dalam single
+// atomic tx. Equivalent ke Spring's @Transactional annotation.
+// Lihat ADR-0024 untuk rationale + pattern guidance.
+//
+// (File-level commentary — package comment ada di postgres.go.)
 
 import (
 	"context"
