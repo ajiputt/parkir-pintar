@@ -1,5 +1,19 @@
 // k6 load test — availability (read-heavy).
-// Target: p95 < 100ms, 1000 RPS sustained.
+//
+// NOTE: /v1/availability dibatasi Light tier rate limit per ADR-0015
+// (100 RPS per source IP). Test ini sengaja under-limit untuk measure
+// actual system capacity tanpa hit rate limit.
+//
+// Untuk test rate limit defense (1000 RPS dari single IP), bump target
+// ke 1000 dan expect 90% 429 responses — itu confirmed defense working.
+//
+// Run:
+//   k6 run -e GATEWAY_URL=http://localhost:8080 test/load/availability.js
+//
+// SLA target (per-IP):
+//   - p95 < 100ms
+//   - error rate < 0.5%
+//   - 80 RPS sustained (under 100 RPS rate limit safety margin)
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -9,16 +23,16 @@ const errorRate = new Rate('errors');
 
 export const options = {
   scenarios: {
-    spike: {
+    sustained: {
       executor: 'ramping-arrival-rate',
-      startRate: 100,
+      startRate: 20,
       timeUnit: '1s',
-      preAllocatedVUs: 100,
-      maxVUs: 500,
+      preAllocatedVUs: 50,
+      maxVUs: 100,
       stages: [
-        { duration: '30s', target: 1000 },
-        { duration: '2m', target: 1000 },
-        { duration: '30s', target: 0 },
+        { duration: '30s', target: 80 },    // Ramp ke 80 RPS (safely under 100 limit)
+        { duration: '2m', target: 80 },     // Hold 80 RPS untuk 2 menit
+        { duration: '30s', target: 0 },     // Ramp down
       ],
     },
   },
