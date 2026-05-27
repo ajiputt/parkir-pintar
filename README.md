@@ -47,7 +47,7 @@ ParkirPintar adalah backend microservices untuk **satu** parking area terpusat (
 | `reservation` | Inventory, locking, hold-1-jam, lifecycle reservasi | gRPC | ✅ Full (core) |
 | `billing` | Event-sourced invoice, pricing engine, no-show penalty | gRPC + NATS sub | ✅ Full (core) |
 | `payment` | Midtrans QRIS sandbox, webhook, idempotent capture | gRPC + HTTP webhook + NATS pub | ✅ Full |
-| `notification` | Email/push consumer dari NATS event | NATS sub | ✅ Skeleton (mock) |
+| `notification` | NATS event subscriber → AWS SES email dispatch · 6 templates · DLQ · idempotent | NATS sub + SES | ✅ Full |
 | `search` | Future read-model availability multi-area | gRPC | 📐 **Designed only** ([ADR-0009](docs/architecture/adr/0009-defer-search-presence-services.md)) |
 | `presence` | Future location streaming + geofencing | gRPC bidi-stream | 📐 **Designed only** ([ADR-0009](docs/architecture/adr/0009-defer-search-presence-services.md)) |
 
@@ -65,7 +65,7 @@ ParkirPintar bukan sekadar proof-of-concept yang demonstrate fitur — tapi sist
 
 ### 2.1 Architectural Decision Records (ADRs) — Decisions, not just code
 
-Project ini punya **23 ADRs** di [`docs/architecture/adr/`](docs/architecture/adr/) yang document *kenapa* di balik *apa*. Setiap keputusan signifikan punya trade-off analysis written down, bukan tribal knowledge:
+Project ini punya **24 ADRs** di [`docs/architecture/adr/`](docs/architecture/adr/) yang document *kenapa* di balik *apa*. Setiap keputusan signifikan punya trade-off analysis written down, bukan tribal knowledge:
 
 | ADR | What | Why it matters |
 |---|---|---|
@@ -271,13 +271,15 @@ sequenceDiagram
     participant BIL as Billing
     participant PAY as Payment
     participant MT as Midtrans
+    participant NOT as Notification
+    participant SES as AWS SES
 
     Driver->>GW: POST /v1/reservations (Idempotency-Key)
     GW->>RES: CreateReservation()
     RES->>RD: SET NX lock:spot:{id} (TTL 10s)
     RES->>PG: BEGIN TX
-    RES->>PG: INSERT reservation (EXCLUDE constraint cek overlap)
-    RES->>PG: UPDATE spot status=HELD, expires_at=now+1h
+    RES->>PG: INSERT reservation (state=CONFIRMED)<br/>partial unique index cek overlap (ADR-0011)
+    RES->>PG: UPDATE spot status=HELD<br/>(reservation.expires_at = now+1h)
     RES->>PG: COMMIT
     RES->>RD: DEL lock
     RES->>NATS: publish ReservationConfirmed
@@ -316,6 +318,8 @@ sequenceDiagram
     PAY->>NATS: publish PaymentSucceeded
     NATS->>BIL: PaymentSucceeded
     BIL->>PG: invoice.status=PAID
+    NATS->>NOT: PaymentSucceeded (event_id UNIQUE)
+    NOT->>SES: Send receipt email (mock fallback)
 ```
 
 ### 2.4 No-show / Auto-Expiry Flow
@@ -459,33 +463,37 @@ Lihat [`pkg/idempotency/`](pkg/idempotency/store.go).
 
 ## 5. Entity Relationship Diagram (ERD)
 
-> Database per service (logical). Untuk demo kita pakai satu PostgreSQL instance dengan **schema** terpisah (`reservation`, `billing`, `payment`).
+> Database per service (logical). Untuk demo kita pakai satu PostgreSQL instance
+> dengan **schema** terpisah (`reservation`, `billing`, `payment`, `notification`).
+> ERD di bawah mencerminkan state aktual setelah semua migrations applied
+> (reservation: 4 migrations, billing: 2, payment: 2, notification: 1).
 
 ```mermaid
 erDiagram
     PARKING_AREA ||--o{ FLOOR : contains
     FLOOR ||--o{ SPOT : contains
-    SPOT ||--o{ RESERVATION : "is reserved by"
-    RESERVATION ||--o| INVOICE : generates
-    INVOICE ||--o{ INVOICE_ITEM : has
-    INVOICE ||--o{ PAYMENT : settled_by
-    PAYMENT ||--o{ PAYMENT_WEBHOOK : "triggered by"
-    EVENTS_LOG }o--|| RESERVATION : "audit"
-    IDEMPOTENCY_KEY ||--o| RESERVATION : "guards"
+    SPOT ||--o{ RESERVATION : "is held by"
+    RESERVATION ||--o| INVOICE : "generates (async via NATS)"
+    INVOICE ||--o{ INVOICE_ITEM : "has line items"
+    INVOICE ||--o{ PAYMENT : "settled by"
+    PAYMENT ||--o{ WEBHOOK_LOG : "audit trail"
+    EVENTS_LOG }o--|| INVOICE : "event-sourced"
+    USER_CONTACT ||--o{ NOTIFICATION_LOG : "delivered to"
 
     PARKING_AREA {
       uuid id PK
       text name
       text address
       jsonb geo
+      text timezone "Asia/Jakarta default"
       timestamptz created_at
     }
     FLOOR {
       uuid id PK
       uuid area_id FK
       int level
-      int car_capacity
-      int motor_capacity
+      int car_capacity "default 30"
+      int motor_capacity "default 50"
     }
     SPOT {
       uuid id PK
@@ -493,83 +501,128 @@ erDiagram
       text code "F2-C-007"
       text vehicle_type "CAR|MOTOR"
       text status "AVAILABLE|HELD|OCCUPIED|OUT_OF_SERVICE"
-      int version "optimistic lock"
+      int version "optimistic lock counter"
     }
     RESERVATION {
       uuid id PK
-      uuid driver_id
+      text driver_id
       uuid spot_id FK
-      text vehicle_type
       text plate_no
+      text vehicle_type "CAR|MOTOR"
       text state "CONFIRMED|CHECKED_IN|CHECKED_OUT|CANCELLED|EXPIRED"
       timestamptz start_at
-      timestamptz end_at
-      timestamptz expires_at "now+1h"
+      timestamptz expires_at "hold deadline = now+1h"
       timestamptz checkin_at
       timestamptz checkout_at
       text assignment_mode "SYSTEM|USER"
+      text payment_mode "AUTO|MANUAL — ADR-0014"
       text idempotency_key
       timestamptz created_at
+      timestamptz updated_at "trigger-managed"
+    }
+    OUTBOX_RESERVATION["RESERVATION OUTBOX"] {
+      bigserial id PK
+      text aggregate_type
+      uuid aggregate_id
+      text event_type
+      jsonb payload
+      timestamptz occurred_at
+      timestamptz published_at "NULL = pending"
+      int attempts
     }
     INVOICE {
       uuid id PK
-      uuid reservation_id FK
+      uuid reservation_id FK "UNIQUE"
       text driver_id
-      bigint amount_idr
-      text currency "IDR"
-      text status "DRAFT|ISSUED|PAID|VOID"
+      text status "DRAFT|ISSUED|PAID|VOID|OVERDUE"
+      bigint total_amount "in IDR"
+      text currency "IDR default"
+      text payment_mode "AUTO|MANUAL — ADR-0014"
+      timestamptz created_at
       timestamptz issued_at
       timestamptz paid_at
+      timestamptz overdue_at "set saat status→OVERDUE"
+      timestamptz updated_at
     }
     INVOICE_ITEM {
       uuid id PK
       uuid invoice_id FK
       text type "BOOKING_FEE|HOURLY|OVERNIGHT|NO_SHOW_PENALTY"
       text description
-      bigint amount_idr
+      bigint amount "in IDR"
+      timestamptz period_start
+      timestamptz period_end
       jsonb meta
+      timestamptz created_at
+    }
+    EVENTS_LOG {
+      bigserial seq PK
+      text source_event_id UK "NATS envelope.ID — dedup"
+      text aggregate_type
+      text aggregate_id "TEXT not UUID — flexible"
+      text event_type
+      jsonb payload
+      timestamptz occurred_at
+      timestamptz received_at
     }
     PAYMENT {
       uuid id PK
       uuid invoice_id FK
       text method "QRIS"
-      text gateway "MIDTRANS"
-      text gateway_ref
-      text qr_string
-      bigint amount_idr
+      text gateway "MIDTRANS default"
+      text gateway_ref "Midtrans transaction ID"
+      text qr_string "raw QRIS payload"
+      text qr_url "Midtrans QR image URL"
+      bigint amount "in IDR"
+      text currency "IDR default"
       text status "PENDING|SUCCESS|FAILED|EXPIRED"
       text idempotency_key
       timestamptz created_at
       timestamptz settled_at
+      timestamptz expires_at
     }
-    PAYMENT_WEBHOOK {
+    WEBHOOK_LOG {
       uuid id PK
-      uuid payment_id FK
-      text source
-      text signature
+      uuid payment_id "FK loose — webhook bisa pre-create"
+      text source "MIDTRANS|..."
+      text signature "sha512 HMAC"
       jsonb raw_payload
-      bool verified
+      bool verified "default false"
       timestamptz received_at
     }
-    EVENTS_LOG {
-      bigserial seq PK
-      text aggregate_type
-      uuid aggregate_id
-      text event_type
-      jsonb payload
-      timestamptz occurred_at
-    }
-    IDEMPOTENCY_KEY {
-      text key PK
-      text request_hash
-      jsonb response
-      text status
+    USER_CONTACT {
+      text driver_id PK
+      text email "NOT NULL"
+      text name
+      text phone
+      bool opt_in "default true"
       timestamptz created_at
-      timestamptz expires_at
+      timestamptz updated_at
+    }
+    NOTIFICATION_LOG {
+      uuid id PK
+      text driver_id FK
+      text kind "RESERVATION_CONFIRMED|RESERVATION_EXPIRED|INVOICE_ISSUED|INVOICE_OVERDUE|PAYMENT_SUCCEEDED|PAYMENT_FAILED"
+      text channel "EMAIL|SMS|PUSH (only EMAIL aktif)"
+      text subject
+      text body "rendered from template"
+      text status "PENDING|SENT|FAILED"
+      timestamptz sent_at
+      text last_error "DLQ trigger"
+      text event_id UK "NATS envelope.ID — idempotency"
+      timestamptz created_at
     }
 ```
 
-DDL lengkap ada di [`deploy/migrations/`](deploy/migrations/).
+**Schema notes:**
+
+- **`reservation`**: anti-double-booking via partial unique index `one_active_reservation_per_spot` + `one_active_reservation_per_driver` (lihat ADR-0011). `end_at` di-drop di migration 002 — driver tidak tahu kapan keluar, jadi durasi dihitung saat check-out.
+- **`billing`**: event-sourced via `events_log` (append-only). `total_amount` = sum dari semua `invoice_item.amount`. State machine `DRAFT → ISSUED → PAID|VOID|OVERDUE` (lihat ADR-0012 + ADR-0014).
+- **`payment`**: status mapping ke gateway: `PENDING=created, SUCCESS=settlement, FAILED=webhook error, EXPIRED=QRIS timeout`. `webhook_log` simpan semua webhook untuk audit + replay.
+- **`notification`**: `event_id UNIQUE` = idempotency (NATS redeliver = INSERT reject = skip dispatch). No retry — `FAILED` → DLQ subject untuk manual replay (lihat ADR-0013).
+- **Idempotency keys**: setiap service punya tabel `idempotency_keys` sendiri (TEXT PK, request_hash, response_status, response_body, status, expires_at) — Stripe-style pattern, lihat [docs/api/idempotency.md](docs/api/idempotency.md).
+
+DDL lengkap ada di [`deploy/migrations/`](deploy/migrations/) — 4 reservation + 2 billing + 2 payment + 1 notification migration files (9 total `.up.sql`).
 
 ---
 
@@ -751,7 +804,7 @@ Detail prerequisites + troubleshooting di [GETTING_STARTED.md](GETTING_STARTED.m
 
 ## 14. Architecture Decision Records
 
-ADR didokumentasikan di [`docs/architecture/adr/`](docs/architecture/adr/). Total **23 ADRs** covering foundational, data, security, observability, ops, dan testing decisions.
+ADR didokumentasikan di [`docs/architecture/adr/`](docs/architecture/adr/). Total **24 ADRs** covering foundational, data, security, observability, ops, dan testing decisions.
 
 | # | Judul | Status |
 |---|---|---|
@@ -778,8 +831,9 @@ ADR didokumentasikan di [`docs/architecture/adr/`](docs/architecture/adr/). Tota
 | **0021** | **Distributed Transactions via Choreography Saga** | **Accepted** |
 | **0022** | **Observability Stack — Prometheus + Grafana + Loki + Tempo** | **Accepted** |
 | **0023** | **OpenTelemetry Sampling Strategy — Head-Based with Env Override** | **Accepted** |
+| **0024** | **Transaction Management — `pkg/db.RunInTx` Pattern** | **Accepted** |
 
-> Bold rows = added 2026-05-20 untuk address previous assessment feedback gaps (Saga pattern, observability stack rationale, sampling strategy).
+> Bold rows = added 2026-05 untuk address previous assessment feedback gaps (Saga pattern, observability stack rationale, sampling strategy, transaction handling).
 
 ---
 
@@ -800,8 +854,8 @@ ADR didokumentasikan di [`docs/architecture/adr/`](docs/architecture/adr/). Tota
 - 📐 `search` — di-defer karena single-area + no multi-area search radius (per use case eksplisit). `GetAvailability` di reservation cukup.
 - 📐 `presence` — di-defer karena tidak ada acceptance criteria untuk geofencing/location streaming di use case.
 
-**Skeleton with mock implementation**:
-- ⏳ `notification` — log-only; production butuh SES/SNS/FCM adapter (tetap deployed karena demo event-driven architecture).
+**Full implementation with mock fallback for dev/CI**:
+- ✅ `notification` — fully implemented dengan AWS SES v2 integration, 6 templated event handlers (reservation_confirmed, reservation_expired, invoice_issued, invoice_overdue, payment_succeeded, payment_failed), DLQ via NATS, idempotency lewat UNIQUE event_id constraint. Mock mode tersedia (`NOTIFICATION_MOCK_SES=true`) untuk local dev/CI tanpa AWS credential.
 
 **Trade-offs sadar**:
 - Single area → tidak bangun search-by-radius (sesuai use case).

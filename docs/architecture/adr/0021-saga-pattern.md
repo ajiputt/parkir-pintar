@@ -209,9 +209,10 @@ Karena choreography, **no explicit saga state machine** stored. Saga state is
 
 | Service | Owns state for | Visible via |
 |---|---|---|
-| Reservation | Status (PENDING/ACTIVE/COMPLETED/CANCELLED) | `reservations.status` column |
-| Billing | Invoice (ISSUED/PAID/VOIDED) | `invoices.status` column |
-| Payment | Payment (PENDING/SUCCEEDED/FAILED/REFUNDED) | `payments.status` column |
+| Reservation | State (CONFIRMED/CHECKED_IN/CHECKED_OUT/CANCELLED/EXPIRED) | `reservation.reservation.state` column |
+| Billing | Invoice (DRAFT/ISSUED/PAID/VOID/OVERDUE) | `billing.invoice.status` column |
+| Payment | Payment (PENDING/SUCCESS/FAILED/EXPIRED) | `payment.payment.status` column |
+| Notification | Dispatch log (PENDING/SENT/FAILED) | `notification.notification_log.status` column |
 
 Untuk **cross-service saga view**, gunakan OpenTelemetry distributed trace:
 trace_id propagated melalui NATS metadata → single trace span semua services

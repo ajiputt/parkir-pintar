@@ -39,7 +39,7 @@ sequenceDiagram
     Reservation->>Postgres: BEGIN<br/>SELECT spot FOR UPDATE
     Postgres-->>Reservation: spot row<br/>(active reservation check)
 
-    Reservation->>Postgres: INSERT reservation<br/>UPDATE spot.status='RESERVED'<br/>COMMIT
+    Reservation->>Postgres: INSERT reservation (state=CONFIRMED)<br/>UPDATE spot.status='HELD'<br/>COMMIT
     Postgres-->>Reservation: success
 
     Reservation->>NATS: publish<br/>reservation.confirmed
@@ -59,7 +59,7 @@ sequenceDiagram
 
     Driver->>Gateway: POST /v1/reservations/{id}/checkin
     Gateway->>Reservation: gRPC CheckIn
-    Reservation->>Postgres: UPDATE reservation status=ACTIVE
+    Reservation->>Postgres: UPDATE reservation state=CHECKED_IN<br/>UPDATE spot status=OCCUPIED
     Reservation->>NATS: publish reservation.checked_in
     Reservation-->>Gateway: success
     Gateway-->>Driver: 200 OK
@@ -68,7 +68,7 @@ sequenceDiagram
 
     Driver->>Gateway: POST /v1/reservations/{id}/checkout
     Gateway->>Reservation: gRPC CheckOut
-    Reservation->>Postgres: UPDATE reservation status=COMPLETED<br/>UPDATE spot status=AVAILABLE
+    Reservation->>Postgres: UPDATE reservation state=CHECKED_OUT<br/>UPDATE spot status=AVAILABLE
     Reservation->>NATS: publish reservation.checked_out
     
     NATS->>Billing: reservation.checked_out event
@@ -89,7 +89,7 @@ sequenceDiagram
     Midtrans->>Gateway: POST /v1/payments/midtrans/notification<br/>(webhook + signature)
     Gateway->>Payment: gRPC HandleWebhook
     Payment->>Payment: Verify signature
-    Payment->>Postgres: UPDATE payment status=SUCCEEDED
+    Payment->>Postgres: UPDATE payment status=SUCCESS
     Payment->>NATS: publish payment.succeeded
     
     NATS->>Billing: payment.succeeded event
@@ -115,11 +115,11 @@ sequenceDiagram
 
     Note over Worker: Run every 30 detik
 
-    Worker->>Postgres: SELECT reservations WHERE<br/>status=PENDING AND<br/>created_at + 1h < NOW()
+    Worker->>Postgres: SELECT reservations WHERE<br/>state=CONFIRMED AND<br/>expires_at < NOW()
     Postgres-->>Worker: expired list (batch 100)
 
     loop Untuk setiap expired
-        Worker->>Postgres: BEGIN<br/>UPDATE reservation status=EXPIRED<br/>UPDATE spot status=AVAILABLE<br/>COMMIT
+        Worker->>Postgres: BEGIN<br/>UPDATE reservation state=EXPIRED<br/>UPDATE spot status=AVAILABLE<br/>COMMIT
         Worker->>NATS: publish reservation.expired
     end
 
@@ -261,7 +261,7 @@ sequenceDiagram
         alt Idempotent: already processed
             Payment-->>Gateway: OK (no-op, return cached state)
         else First-time webhook
-            Payment->>Postgres: UPDATE payment status=SUCCEEDED
+            Payment->>Postgres: UPDATE payment status=SUCCESS
             Payment->>NATS: publish payment.succeeded
         end
         

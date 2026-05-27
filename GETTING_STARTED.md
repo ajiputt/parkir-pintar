@@ -99,7 +99,7 @@ Yang akan di-boot:
 | `reservation` | 9091 (gRPC) / 9191 (HTTP) | Reservation service |
 | `billing` | 9092 / 9192 | Billing service |
 | `payment` | 9093 / 9193 | Payment service |
-| `notification` | 9196 | Notification (mock SES) |
+| `notification` | 9196 | Notification (AWS SES + DLQ; mock fallback via `NOTIFICATION_MOCK_SES=true`) |
 | `jaeger` | 16686 | Distributed tracing UI |
 | `prometheus` | 9090 | Metrics |
 | `grafana` | 3000 | Dashboards |

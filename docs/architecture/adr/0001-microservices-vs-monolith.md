@@ -71,7 +71,7 @@ Implementasi penuh hanya untuk `reservation`, `billing`, `payment`, `gateway`. Y
 
 **Pilih Option D.**
 
-7 service didesain dan kontrak proto-nya lengkap. Implementasi full ada di **gateway, reservation, billing, payment** (sesuai mandat use case). `search`, `presence`, `notification` di-implement sebagai **runnable skeleton** dengan stub yang cukup untuk demo gRPC handshake & subscribe NATS.
+7 service didesain dan kontrak proto-nya lengkap. Implementasi full ada di **gateway, reservation, billing, payment, notification** (5 service aktif yang fully memenuhi semua use case scenario). Notification subscribe ke 6 NATS event kinds (RESERVATION_CONFIRMED, RESERVATION_EXPIRED, INVOICE_ISSUED, INVOICE_OVERDUE, PAYMENT_SUCCEEDED, PAYMENT_FAILED), render 6 email templates, dan dispatch via AWS SES v2 dengan DLQ untuk failures (lihat ADR-0013). `search` dan `presence` di-defer (proto contract only) — lihat ADR-0009.
 
 ## Consequences
 
@@ -81,7 +81,7 @@ Implementasi penuh hanya untuk `reservation`, `billing`, `payment`, `gateway`. Y
 - Operational manageable untuk demo (6-7 container kecil di docker-compose).
 
 **Negatif**:
-- Skeleton service (`search`, `presence`, `notification`) bisa terlihat thin dalam code review — mitigasi: ada README per service yang jelaskan ekspektasi production.
+- Deferred services (`search`, `presence`) hanya proto contract — mitigasi: ADR-0009 documents rationale + future implementation path.
 - Saat scale ke real production, perlu split `search` dari `reservation` kalau read-model jadi besar.
 
 ## Validation
