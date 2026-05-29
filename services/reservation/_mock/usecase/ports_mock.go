@@ -17,6 +17,7 @@ import (
 	domain "github.com/ajiperdana/parkir-pintar/services/reservation/internal/domain"
 	usecase "github.com/ajiperdana/parkir-pintar/services/reservation/internal/usecase"
 	uuid "github.com/google/uuid"
+	pgx "github.com/jackc/pgx/v5"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -492,4 +493,116 @@ func (m *MockOverdueChecker) CountOverdueByDriverID(ctx context.Context, driverI
 func (mr *MockOverdueCheckerMockRecorder) CountOverdueByDriverID(ctx, driverID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountOverdueByDriverID", reflect.TypeOf((*MockOverdueChecker)(nil).CountOverdueByDriverID), ctx, driverID)
+}
+
+// ---------------- Tx-variant methods (ADR-0024) ----------------
+
+// CreateTx mocks base method.
+func (m *MockReservationRepo) CreateTx(ctx context.Context, tx pgx.Tx, r *domain.Reservation) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateTx", ctx, tx, r)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateTx indicates an expected call of CreateTx.
+func (mr *MockReservationRepoMockRecorder) CreateTx(ctx, tx, r any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTx", reflect.TypeOf((*MockReservationRepo)(nil).CreateTx), ctx, tx, r)
+}
+
+// UpdateStateTx mocks base method.
+func (m *MockReservationRepo) UpdateStateTx(ctx context.Context, tx pgx.Tx, r *domain.Reservation) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateStateTx", ctx, tx, r)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateStateTx indicates an expected call of UpdateStateTx.
+func (mr *MockReservationRepoMockRecorder) UpdateStateTx(ctx, tx, r any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStateTx", reflect.TypeOf((*MockReservationRepo)(nil).UpdateStateTx), ctx, tx, r)
+}
+
+// MarkHeldTx mocks base method.
+func (m *MockSpotRepo) MarkHeldTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, version int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkHeldTx", ctx, tx, id, version)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkHeldTx indicates an expected call of MarkHeldTx.
+func (mr *MockSpotRepoMockRecorder) MarkHeldTx(ctx, tx, id, version any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkHeldTx", reflect.TypeOf((*MockSpotRepo)(nil).MarkHeldTx), ctx, tx, id, version)
+}
+
+// MarkAvailableTx mocks base method.
+func (m *MockSpotRepo) MarkAvailableTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkAvailableTx", ctx, tx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkAvailableTx indicates an expected call of MarkAvailableTx.
+func (mr *MockSpotRepoMockRecorder) MarkAvailableTx(ctx, tx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkAvailableTx", reflect.TypeOf((*MockSpotRepo)(nil).MarkAvailableTx), ctx, tx, id)
+}
+
+// MarkOccupiedTx mocks base method.
+func (m *MockSpotRepo) MarkOccupiedTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkOccupiedTx", ctx, tx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkOccupiedTx indicates an expected call of MarkOccupiedTx.
+func (mr *MockSpotRepoMockRecorder) MarkOccupiedTx(ctx, tx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkOccupiedTx", reflect.TypeOf((*MockSpotRepo)(nil).MarkOccupiedTx), ctx, tx, id)
+}
+
+// ---------------- MockTxRunner ----------------
+
+// MockTxRunner is a mock of TxRunner interface.
+type MockTxRunner struct {
+	ctrl     *gomock.Controller
+	recorder *MockTxRunnerMockRecorder
+	isgomock struct{}
+}
+
+// MockTxRunnerMockRecorder is the mock recorder for MockTxRunner.
+type MockTxRunnerMockRecorder struct {
+	mock *MockTxRunner
+}
+
+// NewMockTxRunner creates a new mock instance.
+func NewMockTxRunner(ctrl *gomock.Controller) *MockTxRunner {
+	mock := &MockTxRunner{ctrl: ctrl}
+	mock.recorder = &MockTxRunnerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTxRunner) EXPECT() *MockTxRunnerMockRecorder {
+	return m.recorder
+}
+
+// RunInTx mocks base method.
+func (m *MockTxRunner) RunInTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RunInTx", ctx, fn)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RunInTx indicates an expected call of RunInTx.
+func (mr *MockTxRunnerMockRecorder) RunInTx(ctx, fn any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunInTx", reflect.TypeOf((*MockTxRunner)(nil).RunInTx), ctx, fn)
 }

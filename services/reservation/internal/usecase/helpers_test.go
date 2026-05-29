@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/domain"
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/usecase"
@@ -46,6 +47,11 @@ func (r *fakeReservationRepo) Create(_ context.Context, res *domain.Reservation)
 	return nil
 }
 
+// CreateTx — Tx variant. Fakes ignore tx param (no real DB).
+func (r *fakeReservationRepo) CreateTx(ctx context.Context, _ pgx.Tx, res *domain.Reservation) error {
+	return r.Create(ctx, res)
+}
+
 func (r *fakeReservationRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.Reservation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -68,6 +74,11 @@ func (r *fakeReservationRepo) UpdateState(_ context.Context, res *domain.Reserva
 	r.byID[res.ID] = res
 	r.updateCalls = append(r.updateCalls, res)
 	return nil
+}
+
+// UpdateStateTx — Tx variant.
+func (r *fakeReservationRepo) UpdateStateTx(ctx context.Context, _ pgx.Tx, res *domain.Reservation) error {
+	return r.UpdateState(ctx, res)
 }
 
 func (r *fakeReservationRepo) FindActiveByDriverID(_ context.Context, driverID string) (*domain.Reservation, error) {
@@ -168,6 +179,11 @@ func (s *fakeSpotRepo) MarkHeld(_ context.Context, id uuid.UUID, _ int) error {
 	return nil
 }
 
+// MarkHeldTx — Tx variant. Fakes ignore tx param.
+func (s *fakeSpotRepo) MarkHeldTx(ctx context.Context, _ pgx.Tx, id uuid.UUID, version int) error {
+	return s.MarkHeld(ctx, id, version)
+}
+
 func (s *fakeSpotRepo) MarkAvailable(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -181,6 +197,11 @@ func (s *fakeSpotRepo) MarkAvailable(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// MarkAvailableTx — Tx variant.
+func (s *fakeSpotRepo) MarkAvailableTx(ctx context.Context, _ pgx.Tx, id uuid.UUID) error {
+	return s.MarkAvailable(ctx, id)
+}
+
 func (s *fakeSpotRepo) MarkOccupied(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -192,6 +213,11 @@ func (s *fakeSpotRepo) MarkOccupied(_ context.Context, id uuid.UUID) error {
 		spot.Status = domain.SpotOccupied
 	}
 	return nil
+}
+
+// MarkOccupiedTx — Tx variant.
+func (s *fakeSpotRepo) MarkOccupiedTx(ctx context.Context, _ pgx.Tx, id uuid.UUID) error {
+	return s.MarkOccupied(ctx, id)
 }
 
 func (s *fakeSpotRepo) GetAvailability(_ context.Context) (*usecase.Availability, error) {
@@ -315,3 +341,27 @@ type fakeOverdueChecker struct {
 func (c *fakeOverdueChecker) CountOverdueByDriverID(_ context.Context, _ string) (int, error) {
 	return c.count, c.err
 }
+
+// ----- fakeTxRunner -----
+//
+// Test double untuk usecase.TxRunner. Tidak ada real DB tx — fakes ignore
+// tx param. fn dipanggil dengan tx=nil. Kalau test mau simulate tx failure
+// (commit/rollback fail), set fakeTxRunner.err.
+
+type fakeTxRunner struct {
+	err   error // simulate Begin/Commit failure
+	calls int
+}
+
+func (t *fakeTxRunner) RunInTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+	t.calls++
+	if t.err != nil {
+		return t.err
+	}
+	// fn dipanggil dengan tx=nil — fakes punya Tx-variant yang ignore tx.
+	// Kalau fn return error, simulate rollback (no commit). Caller dapat err.
+	return fn(nil)
+}
+
+// newFakeTxRunner — helper supaya consistent dengan factory pattern lain.
+func newFakeTxRunner() *fakeTxRunner { return &fakeTxRunner{} }

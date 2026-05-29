@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/domain"
 )
@@ -16,13 +17,23 @@ import (
 //go:generate mockgen -package=mock_usecase -source=ports.go -destination=../../_mock/usecase/ports_mock.go
 
 // ReservationRepo — persistence reservation.
+//
+// Setiap mutator punya 2 variant:
+//   - Method tanpa Tx suffix (pakai pool, auto-commit). Cocok single-statement context.
+//   - Method dengan Tx suffix (accept pgx.Tx). Cocok multi-aggregate operation via db.RunInTx.
+//
+// Lihat ADR-0024 untuk pattern guidance.
 type ReservationRepo interface {
 	// Create simpan reservation baru. Adapter map unique violation (23505) dari
 	// partial index `one_active_reservation_per_spot` atau `one_active_reservation_per_driver`
 	// ke domain.ErrSpotUnavailable atau ErrDriverHasActiveReservation. Lihat ADR-0011.
 	Create(ctx context.Context, r *domain.Reservation) error
+	// CreateTx — Tx variant untuk db.RunInTx callback.
+	CreateTx(ctx context.Context, tx pgx.Tx, r *domain.Reservation) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Reservation, error)
 	UpdateState(ctx context.Context, r *domain.Reservation) error
+	// UpdateStateTx — Tx variant.
+	UpdateStateTx(ctx context.Context, tx pgx.Tx, r *domain.Reservation) error
 	// FindActiveByDriverID — return reservation aktif (CONFIRMED/CHECKED_IN) dari driver.
 	// Return ErrReservationNotFound kalau tidak ada (caller bisa errors.Is check).
 	FindActiveByDriverID(ctx context.Context, driverID string) (*domain.Reservation, error)
@@ -44,11 +55,26 @@ type SpotRepo interface {
 	// List — untuk USER-assigned flow. Filter optional (nil = no filter on that field).
 	// Return total count untuk pagination metadata.
 	List(ctx context.Context, filter SpotFilter) (spots []*domain.Spot, total int, err error)
-	// Lock + status change in transaction (helper).
+	// MarkHeld — optimistic lock via version. Pool variant (single-statement context).
 	MarkHeld(ctx context.Context, id uuid.UUID, version int) error
+	// MarkHeldTx — Tx variant untuk db.RunInTx callback (multi-step atomic).
+	MarkHeldTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, version int) error
 	MarkAvailable(ctx context.Context, id uuid.UUID) error
+	// MarkAvailableTx — Tx variant.
+	MarkAvailableTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error
 	MarkOccupied(ctx context.Context, id uuid.UUID) error
+	// MarkOccupiedTx — Tx variant.
+	MarkOccupiedTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error
 	GetAvailability(ctx context.Context) (*Availability, error)
+}
+
+// TxRunner — usecase port untuk membungkus multi-aggregate operation dalam
+// single Postgres transaction. Implementasi default: pkg/db.RunInTx.
+//
+// Pattern: usecase tidak perlu tahu pool — cukup panggil RunInTx + pass tx
+// ke repo Tx-variant methods. Lihat ADR-0024.
+type TxRunner interface {
+	RunInTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 }
 
 // SpotFilter — query criteria untuk SpotRepo.List.

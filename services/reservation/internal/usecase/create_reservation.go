@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ajiperdana/parkir-pintar/pkg/lock"
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/domain"
@@ -15,12 +16,15 @@ import (
 // CreateReservation — orchestrate booking flow.
 //
 // Steps:
-//  1. Resolve spot (SYSTEM = pick available, USER = use given spot_id).
-//  2. Acquire Redis lock pada spot (fast-fail untuk kontensi USER).
-//  3. Persist reservation (DB EXCLUDE constraint akan menjamin no overlap).
-//  4. Mark spot HELD.
-//  5. Publish ReservationConfirmed.
-//  6. Release lock.
+//  1. Pre-check 1-driver-1-active + overdue invoice.
+//  2. Resolve spot (SYSTEM = pick available, USER = use given spot_id).
+//  3. Acquire Redis lock pada spot (fast-fail untuk kontensi USER).
+//  4. Re-read spot (anti stale).
+//  5. Persist reservation + Mark spot HELD ATOMIC via db.RunInTx (ADR-0024).
+//     → kalau MarkHeld fail (version mismatch), reservation INSERT auto-rollback
+//     → consistency invariant terjaga
+//  6. Publish ReservationConfirmed (best-effort, post-commit).
+//  7. Release lock.
 //
 // Idempotency dipasang di layer adapter (gRPC handler) supaya seluruh response
 // di-cache, bukan hanya intent — lihat adapter/grpcserver/server.go.
@@ -30,6 +34,7 @@ type CreateReservation struct {
 	Locker       Locker
 	Events       EventPublisher
 	Clock        Clock
+	TxRunner     TxRunner // ADR-0024 — wrap multi-aggregate writes
 	HoldDuration time.Duration
 	SpotLockTTL  time.Duration
 	// OverdueChecker — optional. Kalau di-set, pre-check overdue invoice via
@@ -104,29 +109,35 @@ func (uc *CreateReservation) Execute(ctx context.Context, in CreateReservationIn
 		return nil, err
 	}
 
-	// 5. Persist (partial unique index akan reject overlap — lihat ADR-0011).
-	if err := uc.Reservations.Create(ctx, r); err != nil {
-		// adapter map unique violation:
-		//   - one_active_reservation_per_spot   → ErrSpotUnavailable
-		//   - one_active_reservation_per_driver → ErrDriverHasActiveReservation
+	// 5. Persist + Mark spot HELD ATOMIC (ADR-0024).
+	//    Either both commit, or both rollback. Tidak ada lagi state inkonsisten
+	//    "reservation INSERT sukses tapi spot tidak HELD".
+	//
+	//    Inside TX:
+	//      - CreateTx: partial unique index reject overlap — lihat ADR-0011
+	//      - MarkHeldTx: optimistic version lock catch concurrent modify
+	if err := uc.TxRunner.RunInTx(ctx, func(tx pgx.Tx) error {
+		if err := uc.Reservations.CreateTx(ctx, tx, r); err != nil {
+			return err
+		}
+		return uc.Spots.MarkHeldTx(ctx, tx, spotFresh.ID, spotFresh.Version)
+	}); err != nil {
 		return nil, err
 	}
 
-	// 6. Mark spot HELD (optimistic lock)
-	if err := uc.Spots.MarkHeld(ctx, spotFresh.ID, spotFresh.Version); err != nil {
-		return nil, err
-	}
-
-	// 7. Publish event (best-effort — log error, jangan rollback reservation)
+	// 6. Publish event (best-effort — log error, jangan rollback reservation)
+	//
+	// NOTE: event publish DI LUAR DB transaction (NATS bukan DB resource).
+	// Inconsistency window: kalau commit sukses tapi publish fail, billing
+	// tidak tau reservation confirmed → invoice tidak ter-create.
+	//
+	// Mitigasi current: NATS JetStream durable + ack mode kurangi risk window.
+	// Future improvement (RES-OUTBOX): full transactional outbox pattern —
+	// INSERT row ke outbox table DALAM tx yang sama (move publish out),
+	// background dispatcher polling + publish + mark sent.
+	// Pakai pattern: db.RunInTx → INSERT reservation + UPDATE spot + INSERT outbox,
+	// dispatcher poll outbox → publish NATS → UPDATE outbox.published_at.
 	if err := uc.Events.PublishReservationConfirmed(ctx, r); err != nil {
-		// Tidak block flow — billing akan rebuild via outbox/replay nanti
-		// (lihat docs/architecture/adr/0006).
-		//
-		// Known limitation: kalau NATS down saat publish, event hilang.
-		// Mitigasi current: NATS JetStream durable + ack mode kurangi risk window.
-		// Roadmap M2: full transactional outbox pattern — insert event row ke
-		// outbox table dalam tx yang sama dengan reservation, worker terpisah
-		// polling + publish + mark sent. Lihat ROADMAP.md item RES-OUTBOX.
 		_ = err
 	}
 

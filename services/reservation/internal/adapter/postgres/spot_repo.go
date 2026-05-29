@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ajiperdana/parkir-pintar/pkg/db"
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/domain"
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/usecase"
 )
@@ -54,8 +55,18 @@ func (r *SpotRepo) PickAvailable(ctx context.Context, vt domain.VehicleType) (*d
 	return scanSpot(row)
 }
 
+// MarkHeld pakai pool (auto-commit). Untuk multi-step atomic, pakai MarkHeldTx.
 func (r *SpotRepo) MarkHeld(ctx context.Context, id uuid.UUID, version int) error {
-	tag, err := r.pool.Exec(ctx, `
+	return r.markHeld(ctx, r.pool, id, version)
+}
+
+// MarkHeldTx — Tx variant untuk db.RunInTx callback. Optimistic lock via version.
+func (r *SpotRepo) MarkHeldTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, version int) error {
+	return r.markHeld(ctx, tx, id, version)
+}
+
+func (r *SpotRepo) markHeld(ctx context.Context, q db.Querier, id uuid.UUID, version int) error {
+	tag, err := q.Exec(ctx, `
 		UPDATE spot SET status='HELD', version=version+1
 		WHERE id=$1 AND version=$2
 	`, id, version)
@@ -69,13 +80,33 @@ func (r *SpotRepo) MarkHeld(ctx context.Context, id uuid.UUID, version int) erro
 	return nil
 }
 
+// MarkAvailable pakai pool.
 func (r *SpotRepo) MarkAvailable(ctx context.Context, id uuid.UUID) error {
-	_, err := r.pool.Exec(ctx, `UPDATE spot SET status='AVAILABLE', version=version+1 WHERE id=$1`, id)
+	return r.markAvailable(ctx, r.pool, id)
+}
+
+// MarkAvailableTx — Tx variant.
+func (r *SpotRepo) MarkAvailableTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	return r.markAvailable(ctx, tx, id)
+}
+
+func (r *SpotRepo) markAvailable(ctx context.Context, q db.Querier, id uuid.UUID) error {
+	_, err := q.Exec(ctx, `UPDATE spot SET status='AVAILABLE', version=version+1 WHERE id=$1`, id)
 	return err
 }
 
+// MarkOccupied pakai pool.
 func (r *SpotRepo) MarkOccupied(ctx context.Context, id uuid.UUID) error {
-	_, err := r.pool.Exec(ctx, `UPDATE spot SET status='OCCUPIED', version=version+1 WHERE id=$1`, id)
+	return r.markOccupied(ctx, r.pool, id)
+}
+
+// MarkOccupiedTx — Tx variant.
+func (r *SpotRepo) MarkOccupiedTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	return r.markOccupied(ctx, tx, id)
+}
+
+func (r *SpotRepo) markOccupied(ctx context.Context, q db.Querier, id uuid.UUID) error {
+	_, err := q.Exec(ctx, `UPDATE spot SET status='OCCUPIED', version=version+1 WHERE id=$1`, id)
 	return err
 }
 

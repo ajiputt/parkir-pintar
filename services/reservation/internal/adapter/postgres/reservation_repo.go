@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ajiperdana/parkir-pintar/pkg/db"
 	"github.com/ajiperdana/parkir-pintar/services/reservation/internal/domain"
 )
 
@@ -33,8 +34,23 @@ func NewReservationRepo(pool *pgxpool.Pool) *ReservationRepo {
 	return &ReservationRepo{pool: pool}
 }
 
+// Create simpan reservation baru pakai pool (auto-commit single statement).
+//
+// Pattern: pool-based untuk single-statement context. Untuk multi-step
+// operations dalam db.RunInTx, pakai CreateTx variant.
 func (r *ReservationRepo) Create(ctx context.Context, res *domain.Reservation) error {
-	_, err := r.pool.Exec(ctx, `
+	return r.create(ctx, r.pool, res)
+}
+
+// CreateTx — Tx variant. Caller manage tx lifecycle via db.RunInTx.
+// Lihat ADR-0024 untuk pattern guidance.
+func (r *ReservationRepo) CreateTx(ctx context.Context, tx pgx.Tx, res *domain.Reservation) error {
+	return r.create(ctx, tx, res)
+}
+
+// create — shared impl, accept db.Querier (Pool atau Tx).
+func (r *ReservationRepo) create(ctx context.Context, q db.Querier, res *domain.Reservation) error {
+	_, err := q.Exec(ctx, `
 		INSERT INTO reservation (
 			id, driver_id, spot_id, plate_no, vehicle_type,
 			state, start_at, expires_at,
@@ -90,8 +106,19 @@ func (r *ReservationRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Re
 	return scanReservation(row)
 }
 
+// UpdateState pakai pool (auto-commit single statement).
 func (r *ReservationRepo) UpdateState(ctx context.Context, res *domain.Reservation) error {
-	tag, err := r.pool.Exec(ctx, `
+	return r.updateState(ctx, r.pool, res)
+}
+
+// UpdateStateTx — Tx variant untuk db.RunInTx callback.
+func (r *ReservationRepo) UpdateStateTx(ctx context.Context, tx pgx.Tx, res *domain.Reservation) error {
+	return r.updateState(ctx, tx, res)
+}
+
+// updateState — shared impl, accept db.Querier.
+func (r *ReservationRepo) updateState(ctx context.Context, q db.Querier, res *domain.Reservation) error {
+	tag, err := q.Exec(ctx, `
 		UPDATE reservation
 		SET state = $2, checkin_at = $3, checkout_at = $4, updated_at = $5
 		WHERE id = $1

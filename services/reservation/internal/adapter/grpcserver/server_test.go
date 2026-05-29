@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -51,6 +52,11 @@ func (r *fakeResRepo) Create(_ context.Context, res *domain.Reservation) error {
 	r.byID[res.ID] = res
 	return nil
 }
+
+// CreateTx — Tx variant. Fakes ignore tx param.
+func (r *fakeResRepo) CreateTx(ctx context.Context, _ pgx.Tx, res *domain.Reservation) error {
+	return r.Create(ctx, res)
+}
 func (r *fakeResRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.Reservation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -71,6 +77,11 @@ func (r *fakeResRepo) UpdateState(_ context.Context, res *domain.Reservation) er
 	}
 	r.byID[res.ID] = res
 	return nil
+}
+
+// UpdateStateTx — Tx variant.
+func (r *fakeResRepo) UpdateStateTx(ctx context.Context, _ pgx.Tx, res *domain.Reservation) error {
+	return r.UpdateState(ctx, res)
 }
 func (r *fakeResRepo) FindActiveByDriverID(_ context.Context, driverID string) (*domain.Reservation, error) {
 	r.mu.Lock()
@@ -128,6 +139,9 @@ func (s *fakeSpotRepo) MarkHeld(_ context.Context, id uuid.UUID, _ int) error {
 	}
 	return nil
 }
+func (s *fakeSpotRepo) MarkHeldTx(ctx context.Context, _ pgx.Tx, id uuid.UUID, version int) error {
+	return s.MarkHeld(ctx, id, version)
+}
 func (s *fakeSpotRepo) MarkAvailable(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -136,6 +150,9 @@ func (s *fakeSpotRepo) MarkAvailable(_ context.Context, id uuid.UUID) error {
 	}
 	return nil
 }
+func (s *fakeSpotRepo) MarkAvailableTx(ctx context.Context, _ pgx.Tx, id uuid.UUID) error {
+	return s.MarkAvailable(ctx, id)
+}
 func (s *fakeSpotRepo) MarkOccupied(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -143,6 +160,16 @@ func (s *fakeSpotRepo) MarkOccupied(_ context.Context, id uuid.UUID) error {
 		spot.Status = domain.SpotOccupied
 	}
 	return nil
+}
+func (s *fakeSpotRepo) MarkOccupiedTx(ctx context.Context, _ pgx.Tx, id uuid.UUID) error {
+	return s.MarkOccupied(ctx, id)
+}
+
+// fakeTxRunner — test double untuk usecase.TxRunner. Fakes ignore tx.
+type fakeTxRunner struct{}
+
+func (fakeTxRunner) RunInTx(_ context.Context, fn func(tx pgx.Tx) error) error {
+	return fn(nil)
 }
 func (s *fakeSpotRepo) GetAvailability(_ context.Context) (*usecase.Availability, error) {
 	if s.availabilityErr != nil {
@@ -198,18 +225,20 @@ func newFixture(t *testing.T) *serverFixture {
 	locker := &fakeLocker{ok: true}
 	clk := &fakeClock{t: time.Date(2026, 5, 16, 10, 0, 0, 0, time.UTC)}
 
+	tx := fakeTxRunner{}
 	createUC := &usecase.CreateReservation{
 		Reservations: resRepo,
 		Spots:        spotRepo,
 		Locker:       locker,
 		Events:       events,
 		Clock:        clk,
+		TxRunner:     tx,
 		HoldDuration: time.Hour,
 		SpotLockTTL:  10 * time.Second,
 	}
-	checkInUC := &usecase.CheckIn{Reservations: resRepo, Spots: spotRepo, Events: events, Clock: clk}
-	checkOutUC := &usecase.CheckOut{Reservations: resRepo, Spots: spotRepo, Events: events, Clock: clk}
-	cancelUC := &usecase.Cancel{Reservations: resRepo, Spots: spotRepo, Events: events, Clock: clk}
+	checkInUC := &usecase.CheckIn{Reservations: resRepo, Spots: spotRepo, Events: events, Clock: clk, TxRunner: tx}
+	checkOutUC := &usecase.CheckOut{Reservations: resRepo, Spots: spotRepo, Events: events, Clock: clk, TxRunner: tx}
+	cancelUC := &usecase.Cancel{Reservations: resRepo, Spots: spotRepo, Events: events, Clock: clk, TxRunner: tx}
 	availUC := &usecase.GetAvailability{Spots: spotRepo}
 
 	srv := &Server{

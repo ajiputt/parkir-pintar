@@ -40,6 +40,7 @@ func newCreateUC(t *testing.T) (*usecase.CreateReservation, *createDeps) {
 		Locker:         deps.locker,
 		Events:         deps.pub,
 		Clock:          deps.clock,
+		TxRunner:       newFakeTxRunner(),
 		HoldDuration:   15 * time.Minute,
 		SpotLockTTL:    5 * time.Second,
 		OverdueChecker: deps.checker,

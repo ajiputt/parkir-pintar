@@ -32,6 +32,7 @@ func newWorker(repo *fakeReservationRepo, spots *fakeSpotRepo, pub *fakeEventPub
 		Spots:        spots,
 		Events:       pub,
 		Clock:        &fakeClock{t: time.Now()},
+		TxRunner:     newFakeTxRunner(),
 		Interval:     5 * time.Millisecond,
 		BatchSize:    10,
 		Logger:       zap.NewNop(),

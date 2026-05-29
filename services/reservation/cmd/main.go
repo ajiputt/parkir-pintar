@@ -136,21 +136,27 @@ func run() error {
 		}
 	}
 
+	// TxRunner — wrap pkg/db.RunInTx untuk usecase multi-aggregate atomic writes
+	// (ADR-0024). Inject ke setiap usecase yang touch >1 aggregate.
+	txRunner := pgadapter.NewTxRunner(pool)
+
 	createUC := &usecase.CreateReservation{
 		Reservations: resRepo, Spots: spotRepo,
 		Locker: redisadapter.NewLocker(locker),
 		Events: publisher, Clock: clk,
+		TxRunner:     txRunner,
 		HoldDuration: holdDur, SpotLockTTL: lockTTL,
 		OverdueChecker: overdueChecker,
 	}
-	checkInUC := &usecase.CheckIn{Reservations: resRepo, Spots: spotRepo, Events: publisher, Clock: clk}
-	checkOutUC := &usecase.CheckOut{Reservations: resRepo, Spots: spotRepo, Events: publisher, Clock: clk}
-	cancelUC := &usecase.Cancel{Reservations: resRepo, Spots: spotRepo, Events: publisher, Clock: clk}
+	checkInUC := &usecase.CheckIn{Reservations: resRepo, Spots: spotRepo, Events: publisher, Clock: clk, TxRunner: txRunner}
+	checkOutUC := &usecase.CheckOut{Reservations: resRepo, Spots: spotRepo, Events: publisher, Clock: clk, TxRunner: txRunner}
+	cancelUC := &usecase.Cancel{Reservations: resRepo, Spots: spotRepo, Events: publisher, Clock: clk, TxRunner: txRunner}
 	availUC := &usecase.GetAvailability{Spots: spotRepo}
 
 	// ----- Background expiry worker
 	worker := &usecase.ExpiryWorker{
 		Reservations: resRepo, Spots: spotRepo, Events: publisher, Clock: clk,
+		TxRunner:  txRunner,
 		Interval:  durationenv("RESERVATION_EXPIRY_SCAN_INTERVAL", 30*time.Second),
 		BatchSize: 100, Logger: log,
 	}
